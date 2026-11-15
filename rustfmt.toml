@@ -1,0 +1,7 @@
+# Author: Jamius Siam
+# Since: 16/11/2026
+
+# Wrap only past 120 columns (the project rule), then rustfmt's style: args on their own lines, closing paren alone.
+edition = "2024"
+max_width = 120
+use_small_heuristics = "Max"

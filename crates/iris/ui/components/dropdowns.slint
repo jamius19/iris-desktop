@@ -1,0 +1,488 @@
+/*
+* Author: Jamius Siam
+* Since: 16/11/2026
+*/
+
+// Android `ui/components/Dropdowns.kt`. Desktop: Up/Down/Enter/Esc in the panel, hover rows, focus rings.
+
+import { Theme, Type, Metrics, Icons } from "../theme.slint";
+import { UiMath, Nav, SelectOption, Placement, CommitResult } from "../globals.slint";
+import { Label, Icon, FocusRing, ProviderIconBox } from "basics.slint";
+import { IconAction } from "buttons.slint";
+import { FieldGroup } from "rows.slint";
+
+// One panel row: optional icon, text (medium when selected) with the badge after it, the "Streams" radio, the check.
+component PanelItem inherits Rectangle {
+    in property <SelectOption> option;
+    in property <bool> selected;
+    in property <bool> highlighted;
+    callback clicked();
+
+    height: 40px;
+    accessible-role: list-item;
+    accessible-label: self.option.label;
+    accessible-item-selected: self.selected;
+    accessible-action-default => { self.clicked(); }
+
+    Rectangle {
+        background: touch.pressed ? Theme.press-overlay-on-control
+            : touch.has-hover || root.highlighted ? Theme.hover-overlay-on-control : transparent;
+    }
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 8px;
+        if root.option.has-icon: VerticalLayout {
+            alignment: center;
+            ProviderIconBox {
+                icon: root.option.icon;
+                tint: root.option.tint-icon;
+            }
+        }
+        HorizontalLayout {
+            horizontal-stretch: 1;
+            spacing: 6px;
+            alignment: start;
+            Label {
+                text: root.option.label;
+                style: root.selected ? Type.menu-item-selected : Type.menu-item;
+                color: Theme.on-control;
+                wrap: no-wrap;
+                overflow: elide;
+            }
+            if root.option.badge: VerticalLayout {
+                alignment: center;
+                Icon {
+                    source: Icons.save-check;
+                    tint: Theme.on-control;
+                    width: 14px;
+                    height: 14px;
+                    accessible-role: image;
+                    accessible-label: "Downloaded";
+                }
+            }
+        }
+        if root.option.streams: VerticalLayout {
+            alignment: center;
+            Icon {
+                source: Icons.radio;
+                tint: Theme.on-control.with-alpha(0.7);
+                width: 16px;
+                height: 16px;
+                accessible-role: image;
+                accessible-label: "Streams";
+            }
+        }
+        if root.selected: VerticalLayout {
+            alignment: center;
+            Icon {
+                source: Icons.check;
+                tint: Theme.on-control;
+                width: 16px;
+                height: 16px;
+            }
+        }
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+}
+
+// The black control box: 40 px min height, radius 8, dark-mode outline (failure colour with an error).
+component ControlShell inherits Rectangle {
+    in property <bool> has-error;
+    min-height: Metrics.control-height;
+    border-radius: Metrics.control-radius;
+    background: Theme.control;
+    border-width: self.has-error || Theme.dark ? 1px : 0;
+    border-color: self.has-error ? Theme.failure : Theme.control-border;
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 6px;
+        @children
+    }
+}
+
+// The black panel listing `options` (rows 40, max 288, 4 px from the anchor, above it when there's no room).
+// Up/Down move the highlight, Enter picks, Esc closes.
+component Panel inherits PopupWindow {
+    in property <[SelectOption]> options;
+    in property <string> selected;
+    in property <Placement> placement;
+    in property <length> anchor-y;
+    in property <bool> take-focus: true;
+    callback picked(id: string);
+    // ModelCombobox (no `take-focus`) binds it to drive the highlight from its input.
+    in-out property <int> highlighted: UiMath.index-of(self.options, self.selected);
+
+    y: self.placement.y - self.anchor-y;
+    height: self.placement.max-height;
+    close-policy: close-on-click-outside;
+    forward-focus: keys;
+
+    changed highlighted => {
+        list.ensure-visible(self.highlighted);
+    }
+
+    keys := FocusScope {
+        enabled: root.take-focus;
+        key-pressed(event) => {
+            if event.text == Key.DownArrow {
+                root.highlighted = min(root.options.length - 1, root.highlighted + 1);
+                list.ensure-visible(root.highlighted);
+                return accept;
+            }
+            if event.text == Key.UpArrow {
+                root.highlighted = max(0, root.highlighted - 1);
+                list.ensure-visible(root.highlighted);
+                return accept;
+            }
+            if event.text == Key.Return && root.highlighted >= 0 {
+                root.picked(root.options[root.highlighted].id);
+                root.close();
+                return accept;
+            }
+            reject
+        }
+
+        Rectangle {
+            opacity: 0;
+            init => { self.opacity = 1; }
+            animate opacity { duration: 120ms; }
+            border-radius: Metrics.control-radius;
+            background: Theme.control;
+            border-width: Theme.dark ? 1px : 0;
+            border-color: Theme.control-border;
+            drop-shadow-color: Theme.panel-shadow;
+            drop-shadow-offset-y: 4px;
+            drop-shadow-blur: 12px;
+            clip: true;
+
+            list := Flickable {
+                content-height: rows.preferred-height;
+                // Opens scrolled so the selection has two rows above it, as Android.
+                init => {
+                    self.content-y = -max(0, min(rows.preferred-height - self.height,
+                        (UiMath.index-of(root.options, root.selected) - 2) * 40px));
+                }
+                function ensure-visible(index: int) {
+                    if index * 40px + 4px < -self.content-y {
+                        self.content-y = -(index * 40px + 4px);
+                    } else if (index + 1) * 40px + 4px > -self.content-y + self.height {
+                        self.content-y = -((index + 1) * 40px + 4px - self.height);
+                    }
+                }
+                rows := VerticalLayout {
+                    padding-top: 4px;
+                    padding-bottom: 4px;
+                    alignment: start;
+                    for option[index] in root.options: PanelItem {
+                        option: option;
+                        selected: option.id == root.selected;
+                        highlighted: index == root.highlighted;
+                        clicked => {
+                            root.picked(option.id);
+                            root.close();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Read-only black dropdown (fixed choices): shows the selected option (icon, label, badge) and the arrow (turns
+// 180° while open, 200 ms). A pick calls `picked` if it changed.
+export component SelectDropdown inherits Rectangle {
+    in property <[SelectOption]> options;
+    in property <string> selected;
+    in property <string> label;
+    in property <bool> has-error;
+    callback picked(id: string);
+    property <int> index: UiMath.index-of(self.options, self.selected);
+    property <SelectOption> current: self.index >= 0 ? self.options[self.index] : { label: "" };
+    property <bool> keyboard-focus;
+
+    min-height: Metrics.control-height;
+    horizontal-stretch: 1;
+    accessible-role: combobox;
+    accessible-label: self.label;
+    accessible-value: self.current.label;
+    accessible-expandable: true;
+    accessible-expanded: panel.is-open;
+    accessible-action-expand => { self.open(); }
+
+    function open() {
+        Nav.focus-root();
+        panel.show();
+    }
+
+    ControlShell {
+        has-error: root.has-error;
+        if root.current.has-icon: HorizontalLayout {
+            padding-right: 8px;
+            VerticalLayout {
+                alignment: center;
+                ProviderIconBox {
+                    icon: root.current.icon;
+                    tint: root.current.tint-icon;
+                }
+            }
+        }
+        HorizontalLayout {
+            horizontal-stretch: 1;
+            spacing: 6px;
+            alignment: start;
+            Label {
+                text: root.current.label;
+                style: Type.button;
+                color: Theme.on-control;
+                wrap: no-wrap;
+                overflow: elide;
+            }
+            if root.current.badge: VerticalLayout {
+                alignment: center;
+                Icon {
+                    source: Icons.save-check;
+                    tint: Theme.on-control;
+                    width: 14px;
+                    height: 14px;
+                }
+            }
+        }
+        Rectangle {
+            width: 28px;
+            Icon {
+                source: Icons.arrow-down;
+                tint: Theme.on-control;
+                width: 16px;
+                height: 16px;
+                transform-rotation: panel.is-open ? 180deg : 0deg;
+                animate transform-rotation { duration: 200ms; }
+            }
+        }
+    }
+    Rectangle {
+        border-radius: Metrics.control-radius;
+        background: touch.pressed ? Theme.press-overlay-on-control
+            : touch.has-hover ? Theme.hover-overlay-on-control : transparent;
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.open(); }
+    }
+    focus := FocusScope {
+        focus-on-click: false;
+        focus-gained(reason) => { root.keyboard-focus = reason == FocusReason.tab-navigation; }
+        key-pressed(event) => {
+            if event.text == Key.Return || event.text == " " || event.text == Key.DownArrow {
+                panel.show();
+                return accept;
+            }
+            reject
+        }
+    }
+    if focus.has-focus && root.keyboard-focus: FocusRing {
+        width: root.width + 8px;
+        height: root.height + 8px;
+        radius: Metrics.control-radius;
+    }
+
+    panel := Panel {
+        width: root.width;
+        options: root.options;
+        selected: root.selected;
+        anchor-y: root.absolute-position.y;
+        placement: UiMath.dropdown-placement(
+            root.absolute-position.y,
+            root.absolute-position.y + root.height,
+            Nav.window-height,
+            min(root.options.length * 40px + 8px, 288px)
+        );
+        picked(id) => {
+            if id != root.selected {
+                root.picked(id);
+            }
+        }
+    }
+}
+
+// A labelled SelectDropdown; the page saves the pick and puts the error back into `error`.
+export component SelectField inherits FieldGroup {
+    in property <[SelectOption]> options;
+    in property <string> selected;
+    callback picked(id: string);
+    SelectDropdown {
+        options: root.options;
+        selected: root.selected;
+        label: root.label;
+        picked(id) => { root.picked(id); }
+    }
+}
+
+// Editable black model dropdown: type any id (typing filters the list), or pick one. Focusing the field opens the
+// full list; the arrow toggles it. Up/Down move a highlight in the list, Enter picks it. A pick saves at once; typed
+// text commits on blur / Enter (blank = error).
+export component ModelCombobox inherits FieldGroup {
+    in property <string> stored;
+    in property <[SelectOption]> models;
+    callback commit(draft: string) -> CommitResult;
+    property <string> query;
+    property <[SelectOption]> filtered: UiMath.filter-options(self.models, self.query);
+    property <string> invalid-error;
+    property <string> save-error;
+    // Up/Down moved the list's highlight to `moved` since the list opened or the text changed: Enter picks that row
+    // instead of committing the text.
+    property <bool> arrowed;
+    property <int> moved;
+    property <int> highlight: self.arrowed ? self.moved : UiMath.index-of(self.filtered, self.stored);
+    error: self.invalid-error != "" ? self.invalid-error : self.save-error;
+
+    function do-commit() {
+        if input.text == root.stored && root.invalid-error == "" {
+            return;
+        }
+        let result = root.commit(input.text);
+        if result.invalid {
+            root.invalid-error = result.error;
+        } else {
+            input.text = result.value;
+            root.save-error = result.error;
+        }
+    }
+
+    function show-list() {
+        if root.filtered.length > 0 {
+            panel.show();
+        }
+    }
+
+    changed stored => {
+        self.invalid-error = "";
+        if !input.has-focus {
+            input.text = self.stored;
+        }
+    }
+
+    shell := ControlShell {
+        has-error: root.invalid-error != "";
+        Rectangle {
+            horizontal-stretch: 1;
+            TouchArea {
+                mouse-cursor: text;
+                clicked => { input.focus(); }
+            }
+            if input.text == "": Label {
+                x: 0;
+                width: parent.width;
+                text: "Model id";
+                style: Type.button;
+                color: Theme.on-control-muted;
+                wrap: no-wrap;
+            }
+            input := TextInput {
+                y: (parent.height - self.preferred-height) / 2;
+                height: self.preferred-height;
+                text: root.stored;
+                font-family: Type.button.family;
+                font-weight: Type.button.weight;
+                font-size: Type.button.size;
+                color: Theme.on-control;
+                selection-background-color: #FFFFFF59;
+                selection-foreground-color: Theme.on-control;
+                single-line: true;
+                accessible-label: root.label;
+                changed has-focus => {
+                    root.arrowed = false;
+                    if self.has-focus {
+                        root.query = "";
+                        root.show-list();
+                    } else {
+                        panel.close();
+                        root.do-commit();
+                    }
+                }
+                edited => {
+                    root.invalid-error = "";
+                    root.arrowed = false;
+                    root.query = self.text;
+                    root.show-list();
+                }
+                accepted => { Nav.focus-root(); }
+                key-pressed(event) => {
+                    if event.text == Key.Escape {
+                        self.text = root.stored;
+                        Nav.focus-root();
+                        return accept;
+                    }
+                    // Up/Down move the list's highlight (opening it); Enter picks a highlighted row, else commits.
+                    if event.text == Key.DownArrow || event.text == Key.UpArrow {
+                        if !panel.is-open {
+                            root.arrowed = false;
+                            root.show-list();
+                        }
+                        if root.filtered.length > 0 {
+                            root.moved = max(0, min(root.filtered.length - 1,
+                                root.highlight + (event.text == Key.DownArrow ? 1 : -1)));
+                            root.arrowed = true;
+                        }
+                        return accept;
+                    }
+                    if event.text == Key.Return && root.arrowed && panel.is-open
+                        && root.moved < root.filtered.length {
+                        self.text = root.filtered[root.moved].id;
+                        panel.close();
+                        Nav.focus-root();
+                        return accept;
+                    }
+                    reject
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            IconAction {
+                icon: Icons.arrow-down;
+                tint: Theme.on-control;
+                width: 28px;
+                on-control: true;
+                takes-focus: false;
+                icon-rotation: panel.is-open ? 180deg : 0deg;
+                label: panel.is-open ? "Hide models" : "Show models";
+                clicked => {
+                    if panel.is-open {
+                        panel.close();
+                    } else {
+                        root.query = "";
+                        root.arrowed = false;
+                        root.show-list();
+                    }
+                }
+            }
+        }
+    }
+
+    panel := Panel {
+        width: shell.width;
+        options: root.filtered;
+        selected: root.stored;
+        highlighted: root.highlight;
+        take-focus: false;
+        anchor-y: root.absolute-position.y;
+        placement: UiMath.dropdown-placement(
+            shell.absolute-position.y,
+            shell.absolute-position.y + shell.height,
+            Nav.window-height,
+            min(root.filtered.length * 40px + 8px, 288px)
+        );
+        picked(id) => {
+            input.text = id;
+            if input.has-focus {
+                Nav.focus-root();
+            } else {
+                root.do-commit();
+            }
+        }
+    }
+}

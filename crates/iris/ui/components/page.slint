@@ -1,0 +1,83 @@
+/*
+* Author: Jamius Siam
+* Since: 16/11/2026
+*/
+
+// Android `ui/components/PageScaffold.kt`: background, the logo (Home) or back chevron + title, the content (items
+// 15 px apart, scrolling) and the version footer, pinned to the bottom while the content is short. Clicking empty
+// space clears focus, which commits a focused text field.
+
+import { Theme, Type, Icons } from "../theme.slint";
+import { App, Nav } from "../globals.slint";
+import { Label } from "basics.slint";
+import { IconAction } from "buttons.slint";
+
+export component PageScaffold inherits Rectangle {
+    // Empty: Home (logo, no back).
+    in property <string> title;
+    callback back();
+
+    background: Theme.background;
+
+    flick := Flickable {
+        content-height: max(self.height, layout.preferred-height);
+        TouchArea {
+            height: flick.content-height;
+            clicked => { Nav.focus-root(); }
+        }
+        layout := VerticalLayout {
+            width: flick.width;
+            min-height: flick.height;
+            padding-left: 18px;
+            padding-right: 18px;
+            padding-top: 18px;
+            padding-bottom: 28px;
+            // Content keeps its size; the spacer below takes the extra height (footer pinned to the bottom).
+            VerticalLayout {
+                spacing: 15px;
+                vertical-stretch: 0;
+                alignment: start;
+                if root.title == "": HorizontalLayout {
+                    alignment: start;
+                    padding-left: 7px;
+                    padding-bottom: 7px;
+                    Image {
+                        source: Theme.logo;
+                        height: 19px;
+                        width: 19px * 865.39 / 153.13;
+                        accessible-role: image;
+                        accessible-label: "Iris";
+                    }
+                }
+                if root.title != "": HorizontalLayout {
+                    min-height: 40px;
+                    spacing: 2px;
+                    alignment: start;
+                    IconAction {
+                        icon: Icons.chevron-left;
+                        icon-size: 24px;
+                        y: 1px;
+                        label: "Back";
+                        clicked => { root.back(); }
+                    }
+                    Label {
+                        text: root.title;
+                        style: Type.page-title;
+                        accessible-role: text;
+                    }
+                }
+                @children
+            }
+            Rectangle {
+                min-height: 28px;
+                vertical-stretch: 1;
+            }
+            Label {
+                text: "Version " + App.version;
+                style: Type.footer;
+                color: Theme.muted;
+                horizontal-alignment: center;
+            }
+        }
+    }
+}

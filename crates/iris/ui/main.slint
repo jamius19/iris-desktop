@@ -1,0 +1,130 @@
+/*
+* Author: Jamius Siam
+* Since: 16/11/2026
+*/
+
+// The settings window (Android `ui/settings/SettingsApp.kt`): Home and its sub-pages, Custom Words under Post
+// Processing. Opening a page slides it in from the right over its parent, which shifts a quarter left (300 ms,
+// cubic-bezier(0.4, 0, 0.2, 1)); back is the reverse. Sub-pages open fresh. Esc and Alt+Left go back (the mouse back
+// button too, from Rust).
+
+import { Theme, Icons, Type } from "theme.slint";
+import { Prefs, UiMath, Nav, Services, Copy, App } from "globals.slint";
+import { HomePage } from "pages/home.slint";
+import { TranscriptionPage } from "pages/transcription.slint";
+import { PostProcessingPage } from "pages/post_processing.slint";
+import { CustomWordsPage } from "pages/custom_words.slint";
+import { AppearancePage } from "pages/appearance.slint";
+import { DictationPage } from "pages/dictation.slint";
+import { AboutPage } from "pages/about.slint";
+
+export { Prefs, UiMath, Nav, Services, Copy, App, Icons, Type }
+
+// Page ids: 0 Home, 1 Transcription, 2 Post Processing, 3 Custom Words, 4 Appearance, 5 Dictation, 6 About.
+export component MainWindow inherits Window {
+    title: "Iris";
+    icon: @image-url("../../../assets/icons/app/iris-256.png");
+    min-width: 460px;
+    max-width: 460px;
+    preferred-height: 800px;
+    min-height: 560px;
+    background: Theme.background;
+    default-font-family: "Inter";
+
+    property <int> page: 0;
+    property <int> from-page: 0;
+    property <bool> forward: true;
+    property <int> nav-count: 0;
+    property <float> phase: self.nav-count;
+    animate phase { duration: 300ms; easing: cubic-bezier(0.4, 0, 0.2, 1); }
+    property <float> t: clamp(self.phase - self.nav-count + 1, 0, 1);
+
+    public function focus-root() {
+        scope.focus();
+    }
+
+    public function go-back() {
+        if root.page != 0 {
+            root.navigate(root.page == 3 ? 2 : 0, false);
+        }
+    }
+
+    function navigate(to: int, forward: bool) {
+        // Leaving a page commits a focused text field.
+        scope.focus();
+        if root.page == 2 {
+            Prefs.discard-draft();
+        }
+        if to == 0 {
+            Services.recheck();
+        }
+        root.from-page = root.page;
+        root.page = to;
+        root.forward = forward;
+        root.nav-count += 1;
+    }
+
+    function shown(i: int) -> bool {
+        i == root.page || (root.t < 1 && i == root.from-page)
+    }
+
+    function page-x(i: int) -> length {
+        if i == root.page && i != root.from-page {
+            return root.forward ? root.width * (1 - root.t) : -root.width / 4 * (1 - root.t);
+        }
+        if i == root.from-page && i != root.page {
+            return root.forward ? -root.width / 4 * root.t : root.width * root.t;
+        }
+        0px
+    }
+
+    init => {
+        Nav.window-height = self.height;
+        scope.focus();
+    }
+    changed height => {
+        Nav.window-height = self.height;
+    }
+
+    scope := FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.Escape || (event.modifiers.alt && event.text == Key.LeftArrow) {
+                root.go-back();
+                return accept;
+            }
+            reject
+        }
+
+        // Home stays alive (keeps its scroll); the others are created when they open.
+        HomePage {
+            x: root.page-x(0);
+            visible: root.shown(0);
+            open(page) => { root.navigate(page, true); }
+        }
+        if root.shown(1): TranscriptionPage {
+            x: root.page-x(1);
+            back => { root.go-back(); }
+        }
+        if root.shown(2): PostProcessingPage {
+            x: root.page-x(2);
+            back => { root.go-back(); }
+            open-custom-words => { root.navigate(3, true); }
+        }
+        if root.shown(4): AppearancePage {
+            x: root.page-x(4);
+            back => { root.go-back(); }
+        }
+        if root.shown(5): DictationPage {
+            x: root.page-x(5);
+            back => { root.go-back(); }
+        }
+        if root.shown(6): AboutPage {
+            x: root.page-x(6);
+            back => { root.go-back(); }
+        }
+        if root.shown(3): CustomWordsPage {
+            x: root.page-x(3);
+            back => { root.go-back(); }
+        }
+    }
+}

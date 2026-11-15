@@ -1,0 +1,84 @@
+/*
+* Author: Jamius Siam
+* Since: 16/11/2026
+*/
+
+// Android `ui/settings/CustomWordsPage.kt`: the master switch, Correct Similar-Sounding Words, the Add Word field and
+// the list. All but the master switch are dimmed while it is off, still editable.
+
+import { Theme, Type, Metrics, Icons } from "../theme.slint";
+import { Prefs } from "../globals.slint";
+import { Label, Card, Separator } from "../components/basics.slint";
+import { IconAction } from "../components/buttons.slint";
+import { SwitchRow } from "../components/rows.slint";
+import { DraftTextField } from "../components/fields.slint";
+import { PageScaffold } from "../components/page.slint";
+
+export component CustomWordsPage inherits PageScaffold {
+    property <float> dim: Prefs.custom-words-enabled ? 1 : Metrics.disabled-alpha;
+    animate dim { duration: 150ms; }
+    title: "Custom Words (Beta)";
+
+    function add() {
+        word.error = Prefs.add-custom-word(word.text);
+        if word.error == "" {
+            word.text = "";
+        }
+    }
+
+    Card {
+        vertical-padding: 15px;
+        SwitchRow {
+            title: "Custom Words";
+            subtitle: "Help transcription and cleanup spell your names and terms. Sent to cloud providers you use.";
+            checked: Prefs.custom-words-enabled;
+            icon: Icons.spell-check;
+            has-icon: true;
+            toggled(on) => { self.error = Prefs.set-bool("custom_words_enabled", on); }
+        }
+        Separator { }
+        SwitchRow {
+            opacity: root.dim;
+            title: "Correct Similar-Sounding Words";
+            subtitle: "Fix words in the final text that sound like one of yours. "
+                + "May occasionally change the wrong word.";
+            checked: Prefs.correct-similar-words;
+            icon: Icons.ear;
+            has-icon: true;
+            toggled(on) => { self.error = Prefs.set-bool("correct_similar_words", on); }
+        }
+    }
+    Card {
+        vertical-padding: 15px;
+        opacity: root.dim;
+        word := DraftTextField {
+            label: "Add Word";
+            placeholder: "A word or phrase";
+            helper: "Up to 100 words or phrases, 60 characters each.";
+            has-action: true;
+            action-icon: Icons.plus;
+            action-label: "Add word";
+            edited => { self.error = ""; }
+            done => { root.add(); }
+            action => { root.add(); }
+        }
+        if Prefs.custom-words.length > 0: Separator { }
+        if Prefs.custom-words.length > 0: VerticalLayout {
+            for custom-word in Prefs.custom-words: HorizontalLayout {
+                Label {
+                    // Explicit width so a long word wraps with the right height.
+                    width: parent.width - Metrics.control-height;
+                    text: custom-word;
+                    style: Type.field;
+                }
+                IconAction {
+                    icon: Icons.trash;
+                    tint: Theme.failure;
+                    label: "Delete " + custom-word;
+                    width: Metrics.control-height;
+                    clicked => { word.error = Prefs.remove-custom-word(custom-word); }
+                }
+            }
+        }
+    }
+}

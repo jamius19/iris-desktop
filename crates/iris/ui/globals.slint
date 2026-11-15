@@ -1,0 +1,237 @@
+/*
+* Author: Jamius Siam
+* Since: 16/11/2026
+*/
+
+// The Rust side (`src/ui/*.rs`) fills these globals from `iris_core::settings::Settings` and implements the callbacks.
+// Setters take the settings key name and return "" when saved, else the error text for the control's helper slot.
+
+export struct SelectOption {
+    id: string,
+    label: string,
+    icon: image,
+    has-icon: bool,
+    // Monochrome marks (Lucide, OpenAI, Vercel) are tinted with the control text colour.
+    tint-icon: bool,
+    // Android's save-check badge (downloaded on-device models).
+    badge: bool,
+    streams: bool,
+}
+
+export struct Placement {
+    y: length,
+    max-height: length,
+    above: bool,
+}
+
+export struct CommitResult {
+    invalid: bool,
+    value: string,
+    error: string,
+}
+
+export struct Prompt {
+    id: string,
+    name: string,
+    system-prompt: string,
+}
+
+export struct CustomProvider {
+    id: string,
+    name: string,
+    base-url: string,
+    model: string,
+    // "" = model default.
+    reasoning-effort: string,
+    send-json-schema: bool,
+    key-set: bool,
+}
+
+export struct ProviderFormErrors {
+    name: string,
+    base-url: string,
+    api-key: string,
+}
+
+export struct GuideLine {
+    label: string,
+    advice: string,
+}
+
+export struct Licence {
+    title: string,
+    text: string,
+}
+
+// Ported pure helpers from `iris_core::ui_math` (tested there).
+export global UiMath {
+    pure callback dropdown-placement(
+        anchor-top: length,
+        anchor-bottom: length,
+        window-height: length,
+        content-height: length
+    ) -> Placement;
+    pure callback slider-value(fraction: float, min: int, max: int, step: int) -> int;
+    pure callback slider-fraction(value: int, min: int, max: int) -> float;
+    // Options whose label contains the trimmed query, case-insensitive (`filter_models`).
+    pure callback filter-options(options: [SelectOption], query: string) -> [SelectOption];
+    // The index of the option with `id`, else -1.
+    pure callback index-of(options: [SelectOption], id: string) -> int;
+}
+
+export global Prefs {
+    // Transcription.
+    in property <string> stt-provider-id;
+    in property <bool> stt-on-device;
+    in property <bool> stt-gateway;
+    in property <bool> stt-deepgram;
+    in property <bool> stt-soniox;
+    in property <string> stt-model;
+    in property <string> gateway-stt-model;
+    in property <string> deepgram-stt-model;
+    in property <bool> deepgram-upload;
+    in property <string> soniox-stt-model;
+    in property <string> soniox-region;
+    in property <string> soniox-languages;
+    in property <bool> soniox-live;
+    in property <string> on-device-stt-model;
+    in property <string> on-device-model-helper;
+    in property <string> on-device-licence;
+    in property <string> on-device-licence-url;
+    in property <bool> takes-language;
+    in property <int> on-device-unload-minutes;
+    in property <string> stt-language;
+    in property <int> stt-timeout-seconds;
+    in property <bool> vad-enabled;
+    in property <string> skip-silence-subtitle;
+    in property <int> stt-speed-percent;
+    in property <string> local-accelerator;
+    in property <string> microphone-device;
+    in property <string> stt-provider-note;
+    in property <bool> openai-key-set;
+    in property <bool> gateway-key-set;
+    in property <bool> deepgram-key-set;
+    in property <bool> soniox-key-set;
+    in property <bool> openrouter-key-set;
+    in property <[SelectOption]> stt-providers;
+    in property <[SelectOption]> on-device-models;
+    in property <[SelectOption]> unload-options;
+    in property <[SelectOption]> soniox-regions;
+    in property <[SelectOption]> accelerators;
+    in property <[SelectOption]> microphones;
+    in property <[SelectOption]> deepgram-models;
+    in property <[GuideLine]> unload-guide;
+    in property <string> unload-helper;
+
+    // Post processing.
+    in property <bool> remove-filler-words;
+    in property <bool> custom-words-enabled;
+    in property <bool> correct-similar-words;
+    in property <[string]> custom-words;
+    in property <string> custom-words-note;
+    in property <bool> custom-words-note-is-warning;
+    in property <bool> cleanup-enabled;
+    in property <string> cleanup-provider-id;
+    in property <bool> cleanup-open-router;
+    in property <string> cleanup-model;
+    in property <string> cleanup-reasoning-effort;
+    in property <string> cleanup-provider-options;
+    in property <string> open-router-cleanup-model;
+    in property <string> open-router-cleanup-reasoning-effort;
+    in property <string> open-router-cleanup-provider-options;
+    in property <int> cleanup-timeout-seconds;
+    in property <string> gateway-options-hint;
+    in property <string> openrouter-options-hint;
+    // The selected custom provider (`custom-selected`), else empty.
+    in property <bool> custom-selected;
+    in property <CustomProvider> custom;
+    // Built-ins, saved custom providers and the unsaved draft (if any).
+    in property <[SelectOption]> cleanup-providers;
+    in property <string> draft-id;
+    in property <[SelectOption]> reasoning-options;
+    in property <[Prompt]> prompts;
+    in property <[SelectOption]> prompt-options;
+    in property <Prompt> active-prompt;
+
+    // Appearance and dictation.
+    in property <string> overlay-position;
+    in property <int> panel-lines;
+    in property <int> panel-width-percent;
+    in property <string> paste-method;
+    in property <bool> append-trailing-space;
+    in property <bool> restore-clipboard;
+    in property <int> paste-delay-ms;
+    in property <int> paste-delay-after-ms;
+    in property <bool> feedback-sounds;
+    in property <int> feedback-volume-percent;
+    in property <bool> launch-at-startup;
+    in property <bool> wayland;
+
+    // A custom provider's own settings use the keys `custom_cleanup_model:<id>`,
+    // `custom_cleanup_reasoning_effort:<id>` and `custom_cleanup_send_json_schema:<id>`; the active prompt's
+    // `prompt_name` and `prompt_text`.
+    callback set-bool(key: string, value: bool) -> string;
+    callback set-int(key: string, value: int) -> string;
+    callback set-string(key: string, value: string) -> string;
+    // Autosave text commit (Android `commitDecision` + the key's validator, then save).
+    callback commit-text(key: string, draft: string) -> CommitResult;
+
+    // API keys run off the UI thread; the result arrives as a key event (`key-op-*`) for the field named `target`.
+    callback save-key(target: string, name: string, value: string);
+    callback clear-key(target: string, name: string);
+    in property <int> key-op-seq;
+    in property <string> key-op-target;
+    in property <string> key-op-error;
+
+    // Custom words.
+    callback add-custom-word(word: string) -> string;
+    callback remove-custom-word(word: string) -> string;
+
+    // Custom cleanup providers: a new one is a draft (not used for cleanup) until saved; picking another provider or
+    // leaving the page discards it.
+    callback new-draft();
+    callback discard-draft();
+    callback check-custom-provider(
+        id: string,
+        name: string,
+        base-url: string,
+        key-input: string,
+        key-shown: bool
+    ) -> ProviderFormErrors;
+    // Runs after a clean check; reports through the key event with target "provider:<id>".
+    callback save-custom-provider(id: string, name: string, base-url: string, key-input: string);
+    // Clears the key, then removes the provider; reports through the key event with target "provider:<id>".
+    callback delete-custom-provider(id: string);
+
+    // Prompts.
+    callback new-prompt() -> string;
+    callback delete-prompt(id: string) -> string;
+}
+
+// Moves focus to the window's own focus scope (so Esc and Alt+Left still reach it); wired to `MainWindow`.
+export global Nav {
+    callback focus-root();
+    // Set by `MainWindow`: dropdowns place their panels in it.
+    in-out property <length> window-height;
+}
+
+export global Services {
+    in property <bool> microphone-found;
+    in property <bool> wayland;
+    in property <bool> text-input-ready;
+    in property <string> text-input-helper;
+    callback microphone-setup();
+    callback text-input-setup();
+    callback recheck();
+}
+
+// Copy helpers from `iris_core::copy`.
+export global Copy {
+    pure callback api-key-helper(is-set: bool, shared-with: string) -> string;
+}
+
+export global App {
+    in property <string> version;
+    in property <[Licence]> licences;
+    callback open-url(url: string);
+}

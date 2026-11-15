@@ -1,0 +1,404 @@
+/*
+* Author: Jamius Siam
+* Since: 16/11/2026
+*/
+
+// Android `ui/components/TextFields.kt`. Desktop: commit on blur and Enter (Ctrl+Enter in multi-line fields), Esc
+// reverts the draft.
+
+import { Theme, Type, Metrics, Icons } from "../theme.slint";
+import { Prefs, Nav, CommitResult } from "../globals.slint";
+import { Label } from "basics.slint";
+import { IconAction } from "buttons.slint";
+import { FieldGroup } from "rows.slint";
+
+// The outlined field box: 1 px border (focused: text colour, error: failure colour; 150 ms), radius 8, no fill.
+// Clicks on the padding focus the input.
+component FieldShell inherits Rectangle {
+    in property <bool> focused;
+    in property <bool> has-error;
+    in property <bool> multi-line;
+    in property <bool> has-trailing;
+    callback clicked();
+
+    min-height: self.multi-line ? 88px : Metrics.control-height;
+    border-radius: Metrics.control-radius;
+    border-width: 1px;
+    border-color: self.has-error ? Theme.failure : self.focused ? Theme.field-border-focused : Theme.field-border;
+    animate border-color { duration: 150ms; }
+
+    TouchArea {
+        mouse-cursor: text;
+        clicked => { root.clicked(); }
+    }
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: root.has-trailing ? 6px : 12px;
+        @children
+    }
+}
+
+// The text input with its placeholder, in the field or mono style.
+component Input inherits VerticalLayout {
+    in property <string> placeholder;
+    in property <bool> multi-line;
+    in property <bool> mono;
+    in property <bool> password;
+    in-out property <string> text <=> input.text;
+    out property <bool> has-focus: input.has-focus;
+    callback committed();
+    callback reverted();
+    callback edited();
+    callback accepted();
+
+    public function focus-input() {
+        input.focus();
+    }
+
+    public function select-all() {
+        input.select-all();
+    }
+
+    horizontal-stretch: 1;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    alignment: self.multi-line ? start : center;
+
+    Rectangle {
+        min-height: input.preferred-height;
+        if root.text == "" && root.placeholder != "": Label {
+            x: 0;
+            y: 0;
+            width: parent.width;
+            height: input.preferred-height;
+            text: root.placeholder;
+            style: Type.field;
+            color: Theme.muted;
+            wrap: no-wrap;
+            overflow: elide;
+            vertical-alignment: top;
+        }
+        input := TextInput {
+            font-family: root.mono ? Type.mono.family : Type.field.family;
+            font-weight: root.mono ? Type.mono.weight : Type.field.weight;
+            font-size: root.mono ? Type.mono.size : Type.field.size;
+            color: Theme.text;
+            selection-background-color: Theme.selection;
+            selection-foreground-color: Theme.text;
+            single-line: !root.multi-line;
+            wrap: root.multi-line ? word-wrap : no-wrap;
+            input-type: root.password ? InputType.password : InputType.text;
+            changed has-focus => {
+                if !self.has-focus {
+                    root.committed();
+                }
+            }
+            edited => { root.edited(); }
+            accepted => { root.accepted(); }
+            key-pressed(event) => {
+                if event.text == Key.Escape {
+                    root.reverted();
+                    return accept;
+                }
+                if root.multi-line && event.text == Key.Return && event.modifiers.control {
+                    root.accepted();
+                    return accept;
+                }
+                reject
+            }
+        }
+    }
+}
+
+// An autosaving text field (single line, or a text area with `multi-line`): the draft commits on blur / Enter
+// through `commit` (trimmed, unchanged = nothing, invalid = error shown and not saved). The stored value never flows
+// into a focused field. `clearable` adds a trash that clears the field and saves "".
+export component AutosaveTextField inherits FieldGroup {
+    in property <string> stored;
+    in property <string> placeholder;
+    in property <bool> clearable: true;
+    in property <bool> multi-line;
+    in property <bool> mono;
+    callback commit(draft: string) -> CommitResult;
+    property <string> invalid-error;
+    property <string> save-error;
+    error: self.invalid-error != "" ? self.invalid-error : self.save-error;
+
+    public function focus-input() {
+        input.focus-input();
+    }
+
+    public function select-all() {
+        input.select-all();
+    }
+
+    // Commits the draft now, before an action that changes `stored` (a blur commit would come too late).
+    public function commit-now() {
+        root.do-commit();
+    }
+
+    // Shows `stored` now, also while focused (an action's own change of `stored`).
+    public function show-stored() {
+        input.text = root.stored;
+        root.invalid-error = "";
+    }
+
+    function do-commit() {
+        if input.text == root.stored && root.invalid-error == "" {
+            return;
+        }
+        let result = root.commit(input.text);
+        if result.invalid {
+            root.invalid-error = result.error;
+        } else {
+            input.text = result.value;
+            root.save-error = result.error;
+        }
+    }
+
+    changed stored => {
+        self.invalid-error = "";
+        if !input.has-focus {
+            input.text = self.stored;
+        }
+    }
+
+    FieldShell {
+        focused: input.has-focus;
+        has-error: root.invalid-error != "";
+        multi-line: root.multi-line;
+        has-trailing: root.clearable && (input.text != "" || root.stored != "");
+        clicked => { input.focus-input(); }
+        input := Input {
+            text: root.stored;
+            placeholder: root.placeholder;
+            multi-line: root.multi-line;
+            mono: root.mono;
+            committed => { root.do-commit(); }
+            reverted => {
+                self.text = root.stored;
+                root.invalid-error = "";
+                Nav.focus-root();
+            }
+            edited => { root.invalid-error = ""; }
+            accepted => { Nav.focus-root(); }
+        }
+        if root.clearable && (input.text != "" || root.stored != ""): VerticalLayout {
+            alignment: root.multi-line ? start : center;
+            IconAction {
+                icon: Icons.trash;
+                tint: Theme.failure;
+                width: 28px;
+                takes-focus: false;
+                label: "Clear " + root.label;
+                clicked => {
+                    input.text = "";
+                    if input.has-focus {
+                        Nav.focus-root();
+                    } else {
+                        root.do-commit();
+                    }
+                }
+            }
+        }
+    }
+}
+
+// The API key (or password) box: masked input, the eye (shows the input while there is some), display-only dots while
+// a key is stored and there is no input, and a trash when `trash-label` is set.
+component SecureKeyShell inherits FieldShell {
+    in property <bool> stored-shown;
+    in property <string> placeholder;
+    in property <string> trash-label;
+    in property <string> field-label;
+    in-out property <string> text <=> input.text;
+    in-out property <bool> visible-input;
+    out property <bool> input-focused: input.has-focus;
+    callback blurred();
+    callback trash();
+
+    public function focus-input() {
+        input.focus-input();
+    }
+
+    focused: input.has-focus;
+    has-trailing: self.text != "" || self.trash-label != "";
+    clicked => { input.focus-input(); }
+
+    Rectangle {
+        horizontal-stretch: 1;
+        if root.stored-shown && root.text == "": Label {
+            x: 0;
+            width: parent.width;
+            text: "••••••••••";
+            style: Type.field;
+            wrap: no-wrap;
+            accessible-role: none;
+        }
+        input := Input {
+            width: parent.width;
+            placeholder: root.stored-shown ? "" : root.placeholder;
+            password: !root.visible-input;
+            committed => { root.blurred(); }
+            reverted => {
+                self.text = "";
+                Nav.focus-root();
+            }
+            accepted => { Nav.focus-root(); }
+        }
+    }
+    if root.text != "": VerticalLayout {
+        alignment: center;
+        IconAction {
+            icon: root.visible-input ? Icons.eye-off : Icons.eye;
+            width: 28px;
+            takes-focus: false;
+            label: root.visible-input ? "Hide " + root.field-label : "Show " + root.field-label;
+            clicked => { root.visible-input = !root.visible-input; }
+        }
+    }
+    if root.trash-label != "": VerticalLayout {
+        alignment: center;
+        IconAction {
+            icon: Icons.trash;
+            tint: Theme.failure;
+            width: 28px;
+            takes-focus: false;
+            label: root.trash-label;
+            clicked => { root.trash(); }
+        }
+    }
+}
+
+// Write-only API key field: never seeded or read back. A trimmed non-blank input saves on blur / Enter (cleared once
+// saved); the trash deletes the stored key. `name` is the keychain entry (Android pref name).
+export component ApiKeyField inherits FieldGroup {
+    in property <bool> is-set;
+    in property <string> placeholder: "Paste your API key";
+    in property <string> set-helper;
+    in property <string> unset-helper;
+    in property <string> name;
+    property <string> op-error;
+    property <int> op-seq: Prefs.key-op-seq;
+
+    label: "API Key";
+    helper: self.is-set ? self.set-helper : self.unset-helper;
+    helper-color: self.is-set ? Theme.muted : Theme.failure;
+    error: self.op-error;
+
+    changed op-seq => {
+        if Prefs.key-op-target == self.name {
+            self.op-error = Prefs.key-op-error;
+            if self.op-error == "" {
+                shell.text = "";
+                shell.visible-input = false;
+            }
+        }
+    }
+
+    shell := SecureKeyShell {
+        field-label: "API Key";
+        stored-shown: root.is-set;
+        placeholder: root.placeholder;
+        has-error: root.op-error != "";
+        trash-label: root.is-set ? "Delete saved API key" : "";
+        blurred => {
+            // Rust trims and ignores a blank input.
+            if self.text != "" {
+                Prefs.save-key(root.name, root.name, self.text);
+            }
+        }
+        trash => {
+            self.text = "";
+            Nav.focus-root();
+            Prefs.clear-key(root.name, root.name);
+        }
+    }
+}
+
+// A form draft's API key (saved by the form): while `stored-shown` and no input it shows the saved dots. The trash
+// clears the input, or without input marks the stored key for removal.
+export component DraftApiKeyField inherits FieldGroup {
+    in property <bool> stored-shown;
+    in-out property <string> text <=> shell.text;
+    callback remove-stored();
+    callback edited();
+
+    label: "API Key";
+    helper: self.stored-shown ? "API key saved. Enter a new one to replace it." : "Not set";
+    helper-color: self.stored-shown ? Theme.muted : Theme.failure;
+
+    changed text => { self.edited(); }
+
+    shell := SecureKeyShell {
+        field-label: "API Key";
+        stored-shown: root.stored-shown;
+        placeholder: "Paste your API key";
+        has-error: root.error != "";
+        trash-label: self.text != "" ? "Clear API key" : root.stored-shown ? "Remove saved API key" : "";
+        trash => {
+            if self.text != "" {
+                self.text = "";
+                self.visible-input = false;
+            } else {
+                root.remove-stored();
+            }
+        }
+    }
+}
+
+// A single-line field that only edits a form draft (saved elsewhere): a trash clears it. Enter runs `done`. An
+// optional bordered action button (e.g. "+") sits beside the field.
+export component DraftTextField inherits FieldGroup {
+    in property <string> placeholder;
+    in-out property <string> text <=> input.text;
+    in property <image> action-icon;
+    in property <string> action-label;
+    in property <bool> has-action;
+    callback edited();
+    callback done();
+    callback action();
+
+    public function focus-input() {
+        input.focus-input();
+    }
+
+    HorizontalLayout {
+        spacing: 8px;
+        FieldShell {
+            horizontal-stretch: 1;
+            focused: input.has-focus;
+            has-error: root.error != "";
+            has-trailing: input.text != "";
+            clicked => { input.focus-input(); }
+            input := Input {
+                placeholder: root.placeholder;
+                edited => { root.edited(); }
+                accepted => { root.done(); }
+                reverted => { Nav.focus-root(); }
+            }
+            if input.text != "": VerticalLayout {
+                alignment: center;
+                IconAction {
+                    icon: Icons.trash;
+                    tint: Theme.failure;
+                    width: 28px;
+                    takes-focus: false;
+                    label: "Clear " + root.label;
+                    clicked => {
+                        input.text = "";
+                        root.edited();
+                    }
+                }
+            }
+        }
+        if root.has-action: IconAction {
+            icon: root.action-icon;
+            label: root.action-label;
+            bordered: true;
+            width: Metrics.control-height;
+            takes-focus: false;
+            clicked => { root.action(); }
+        }
+    }
+}

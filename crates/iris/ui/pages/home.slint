@@ -1,0 +1,75 @@
+/*
+* Author: Jamius Siam
+* Since: 16/11/2026
+*/
+
+// Android `ui/settings/HomePage.kt`, desktop Services: Microphone, and on Wayland Text Input (Global Shortcut: M2).
+
+import { Icons } from "../theme.slint";
+import { Services } from "../globals.slint";
+import { Card, ServicesDivider } from "../components/basics.slint";
+import { NavCard, StatusRow } from "../components/rows.slint";
+import { PageScaffold } from "../components/page.slint";
+
+export component HomePage inherits PageScaffold {
+    callback open(page: int);
+
+    Card {
+        vertical-padding: 15px;
+        StatusRow {
+            icon: Icons.mic;
+            icon-size: 22px;
+            icon-top-padding: 2px;
+            title: "Microphone";
+            ok: Services.microphone-found;
+            ok-text: "Found";
+            not-ok-text: "Not found";
+            helper: "Connect a microphone, or check that Iris may use it.";
+            setup => { Services.microphone-setup(); }
+        }
+        if Services.wayland: ServicesDivider { }
+        if Services.wayland: StatusRow {
+            icon: Icons.clipboard-paste;
+            icon-size: 22px;
+            icon-top-padding: 2px;
+            title: "Text Input";
+            ok: Services.text-input-ready;
+            ok-text: "Ready";
+            not-ok-text: "Missing";
+            helper: Services.text-input-helper;
+            setup => { Services.text-input-setup(); }
+        }
+    }
+    NavCard {
+        icon: Icons.audio-lines;
+        icon-size: 22px;
+        title: "Transcription Settings";
+        subtitle: "Set up transcription provider settings";
+        clicked => { root.open(1); }
+    }
+    NavCard {
+        icon: Icons.sparkles;
+        icon-size: 23px;
+        title: "Post Processing Settings";
+        subtitle: "Set up post processing for the transcribed text";
+        clicked => { root.open(2); }
+    }
+    NavCard {
+        icon: Icons.keyboard;
+        title: "Dictation Settings";
+        subtitle: "Shortcut, text insertion, sounds and startup";
+        clicked => { root.open(5); }
+    }
+    NavCard {
+        icon: Icons.eye;
+        title: "Appearance";
+        subtitle: "Customize Iris to fit you";
+        clicked => { root.open(4); }
+    }
+    NavCard {
+        icon: Icons.info;
+        title: "About Iris";
+        subtitle: "Version, licences and credits";
+        clicked => { root.open(6); }
+    }
+}

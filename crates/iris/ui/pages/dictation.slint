@@ -1,0 +1,98 @@
+/*
+* Author: Jamius Siam
+* Since: 16/11/2026
+*/
+
+// Desktop-only page: text insertion (Handy's paste settings), sounds and startup. The Shortcut section comes in M2;
+// the settings take effect in M2 (paste) and M4 (sounds, startup).
+
+import { Metrics } from "../theme.slint";
+import { Prefs } from "../globals.slint";
+import { Section, Separator } from "../components/basics.slint";
+import { SwitchRow, SliderGroup, ValueFormat } from "../components/rows.slint";
+import { SelectField } from "../components/dropdowns.slint";
+import { PageScaffold } from "../components/page.slint";
+
+export component DictationPage inherits PageScaffold {
+    title: "Dictation Settings";
+
+    Section {
+        title: "Text Insertion";
+        SelectField {
+            label: "Paste Method";
+            options: [
+                { id: "ctrl_v", label: "Ctrl+V" },
+                { id: "direct", label: "Direct typing" },
+                { id: "shift_insert", label: "Shift+Insert" },
+                { id: "ctrl_shift_v", label: "Ctrl+Shift+V" },
+            ];
+            selected: Prefs.paste-method;
+            helper: Prefs.wayland
+                ? "Direct typing uses ydotool and can mangle non-English text. Ctrl+V is more reliable." : "";
+            picked(id) => { self.error = Prefs.set-string("paste_method", id); }
+        }
+        Separator { }
+        SwitchRow {
+            title: "Add Trailing Space";
+            checked: Prefs.append-trailing-space;
+            toggled(on) => { self.error = Prefs.set-bool("append_trailing_space", on); }
+        }
+        Separator { }
+        SwitchRow {
+            title: "Restore Clipboard";
+            subtitle: "Puts back what was on the clipboard after pasting.";
+            checked: Prefs.restore-clipboard;
+            toggled(on) => { self.error = Prefs.set-bool("restore_clipboard", on); }
+        }
+        Separator { }
+        SliderGroup {
+            label: "Paste Delay";
+            subtitle: "Wait before sending the paste keys.";
+            value: Prefs.paste-delay-ms;
+            minimum: 0;
+            maximum: 500;
+            step: 10;
+            format: ValueFormat.milliseconds;
+            released(v) => { self.error = Prefs.set-int("paste_delay_ms", v); }
+        }
+        Separator { }
+        SliderGroup {
+            label: "Restore Delay";
+            subtitle: "Wait after pasting before restoring the clipboard.";
+            value: Prefs.paste-delay-after-ms;
+            minimum: 0;
+            maximum: 500;
+            step: 10;
+            format: ValueFormat.milliseconds;
+            released(v) => { self.error = Prefs.set-int("paste_delay_after_ms", v); }
+        }
+    }
+    Section {
+        title: "Sounds";
+        SwitchRow {
+            title: "Start and Stop Sounds";
+            checked: Prefs.feedback-sounds;
+            toggled(on) => { self.error = Prefs.set-bool("feedback_sounds", on); }
+        }
+        Separator { }
+        SliderGroup {
+            opacity: Prefs.feedback-sounds ? 1 : Metrics.disabled-alpha;
+            label: "Volume";
+            value: Prefs.feedback-volume-percent;
+            minimum: 0;
+            maximum: 100;
+            step: 10;
+            format: ValueFormat.percent;
+            released(v) => { self.error = Prefs.set-int("feedback_volume_percent", v); }
+        }
+    }
+    Section {
+        title: "Startup";
+        SwitchRow {
+            title: "Launch at Startup";
+            subtitle: "Starts hidden in the tray.";
+            checked: Prefs.launch-at-startup;
+            toggled(on) => { self.error = Prefs.set-bool("launch_at_startup", on); }
+        }
+    }
+}

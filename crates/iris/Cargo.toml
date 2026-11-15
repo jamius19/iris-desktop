@@ -1,0 +1,27 @@
+# Author: Jamius Siam
+# Since: 16/11/2026
+
+[package]
+name = "iris"
+description = "Voice dictation for Windows and Linux"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+iris-core.workspace = true
+directories.workspace = true
+handy-recorder.workspace = true
+log.workspace = true
+open.workspace = true
+psl.workspace = true
+reqwest.workspace = true
+simplelog.workspace = true
+slint.workspace = true
+tokio.workspace = true
+url.workspace = true
+uuid.workspace = true
+
+[build-dependencies]
+slint-build.workspace = true

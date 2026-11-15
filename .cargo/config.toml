@@ -1,0 +1,5 @@
+# Author: Jamius Siam
+# Since: 16/11/2026
+
+[alias]
+xtask = "run -p xtask --"

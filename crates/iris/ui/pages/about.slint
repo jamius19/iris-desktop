@@ -1,0 +1,71 @@
+/*
+* Author: Jamius Siam
+* Since: 16/11/2026
+*/
+
+// Desktop-only page: version, source link, licence, the Slint credit (required by Slint's Royalty-free licence) and
+// the licence texts. The Rust libraries text comes in M4.
+
+import { AboutSlint } from "std-widgets.slint";
+import { Theme, Type } from "../theme.slint";
+import { App } from "../globals.slint";
+import { Label, Card, Section, Separator, Link } from "../components/basics.slint";
+import { Accordion } from "../components/rows.slint";
+import { PageScaffold } from "../components/page.slint";
+
+export component AboutPage inherits PageScaffold {
+    title: "About Iris";
+
+    Card {
+        HorizontalLayout {
+            alignment: start;
+            Image {
+                source: Theme.logo;
+                height: 19px;
+                width: 19px * 865.39 / 153.13;
+                accessible-role: image;
+                accessible-label: "Iris";
+            }
+        }
+        VerticalLayout {
+            spacing: 8px;
+            Label {
+                text: "Version " + App.version;
+                style: Type.subtitle;
+            }
+            Link {
+                text: "github.com/jamius19/iris-desktop";
+                clicked => { App.open-url("https://github.com/jamius19/iris-desktop"); }
+            }
+            Label {
+                text: "Iris is open source under the Apache License 2.0.";
+                style: Type.helper;
+                color: Theme.muted;
+            }
+        }
+    }
+    Section {
+        title: "Built with";
+        AboutSlint { }
+    }
+    Section {
+        title: "Licences";
+        for licence[index] in App.licences: VerticalLayout {
+            spacing: 15px;
+            if index > 0: Separator { }
+            Accordion {
+                title: licence.title;
+                Label {
+                    text: licence.text;
+                    style: Type.mono;
+                    color: Theme.muted;
+                }
+            }
+        }
+        Label {
+            text: "On-device models have their own licences, linked on the Transcription page.";
+            style: Type.helper;
+            color: Theme.muted;
+        }
+    }
+}

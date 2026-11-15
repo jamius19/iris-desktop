@@ -1,0 +1,15 @@
+# Author: Jamius Siam
+# Since: 16/11/2026
+
+[package]
+name = "xtask"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+ico = "0.6"
+image = { version = "0.25", default-features = false, features = ["png"] }
+ureq = "3"
