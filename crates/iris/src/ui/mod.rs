@@ -146,7 +146,12 @@ pub fn run(start_hidden: bool, no_tray: bool) -> Result<(), slint::PlatformError
                     window.invoke_go_back();
                 }
             }
-            winit::event::WindowEvent::Focused(true) => services::check(),
+            winit::event::WindowEvent::Focused(focused) => {
+                log::debug!("Window focused: {focused}");
+                if *focused {
+                    services::check();
+                }
+            }
             _ => {}
         }
         EventResult::Propagate

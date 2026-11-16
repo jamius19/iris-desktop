@@ -20,18 +20,50 @@ const INVALID: &str = "This shortcut doesn't work here. Pick another one.";
 const NO_ACCESS: &str = "Iris can't read the keyboard. Set up keyboard access, or bind `iris --toggle-transcription` \
                          in your desktop's keyboard settings.";
 
+/// The latest shortcut recording.
+static RECORDING: AtomicU64 = AtomicU64::new(0);
+
 pub fn wire(window: &MainWindow) {
     let prefs = window.global::<Prefs>();
     prefs.on_record_shortcut(|key| {
         with_state(|state| {
-            state.window.global::<Prefs>().set_recording_shortcut(key.clone());
+            // A new recording ends the previous one, whose late results are then ignored.
+            let recording = RECORDING.fetch_add(1, Ordering::SeqCst) + 1;
+            log::debug!("Shortcut recording requested for {key} (UI {recording})");
+            let latest = move || {
+                let latest = RECORDING.load(Ordering::SeqCst);
+                if latest != recording {
+                    log::debug!("Dropped a result of shortcut recording UI {recording}: UI {latest} is newer");
+                }
+                latest == recording
+            };
+            let prefs = state.window.global::<Prefs>();
+            prefs.set_recording_shortcut(key.clone());
+            prefs.set_recording_caps(model(Vec::new()));
             let key = key.to_string();
-            state.dictation.hotkeys.record(move |binding| {
-                let _ = slint::invoke_from_event_loop(move || with_state(|state| recorded(state, &key, binding)));
-            });
+            state.dictation.hotkeys.record(
+                move |keys| {
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if latest() {
+                            with_state(|state| state.window.global::<Prefs>().set_recording_caps(model(caps(&keys))));
+                        }
+                    });
+                },
+                move |binding| {
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if latest() {
+                            log::debug!("Shortcut recording UI {recording} done: {binding:?}");
+                            with_state(|state| recorded(state, &key, binding));
+                        }
+                    });
+                },
+            );
         })
     });
-    prefs.on_stop_recording_shortcut(|| with_state(|state| state.dictation.hotkeys.stop_recording()));
+    prefs.on_stop_recording_shortcut(|| {
+        log::debug!("Shortcut recording: the field asked to stop (Esc or focus lost)");
+        with_state(|state| state.dictation.hotkeys.stop_recording())
+    });
     prefs.on_reset_shortcut(|key| {
         with_state(|state| {
             let default = if key == "cancel" { DEFAULT_SHORTCUT_CANCEL } else { DEFAULT_SHORTCUT_TRANSCRIBE };
@@ -89,7 +121,9 @@ pub fn register(state: &mut AppState) {
 
 /// A recording finished: saves the binding (None = cancelled).
 fn recorded(state: &mut AppState, key: &str, binding: Option<String>) {
-    state.window.global::<Prefs>().set_recording_shortcut(SharedString::new());
+    let prefs = state.window.global::<Prefs>();
+    prefs.set_recording_shortcut(SharedString::new());
+    prefs.set_recording_caps(model(Vec::new()));
     match binding {
         Some(binding) => save(state, key, &binding),
         // The transcribe shortcut comes back on after a recording.

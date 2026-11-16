@@ -23,6 +23,7 @@ export component DictationPage inherits PageScaffold {
             label: "Transcribe Shortcut";
             caps: Prefs.shortcut-transcribe-caps;
             recording: Prefs.recording-shortcut == "transcribe";
+            pressed: Prefs.recording-caps;
             error: Prefs.shortcut-transcribe-error;
             helper: Prefs.wayland
                 ? "On Wayland without keyboard access, bind `iris --toggle-transcription` in your desktop's "
@@ -49,6 +50,7 @@ export component DictationPage inherits PageScaffold {
             label: "Cancel Shortcut";
             caps: Prefs.shortcut-cancel-caps;
             recording: Prefs.recording-shortcut == "cancel";
+            pressed: Prefs.recording-caps;
             helper: "Active only while dictating.";
             record => { Prefs.record-shortcut("cancel"); }
             stop-recording => { Prefs.stop-recording-shortcut(); }

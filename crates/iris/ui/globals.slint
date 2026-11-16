@@ -203,12 +203,13 @@ export global Prefs {
     in property <bool> launch-at-startup;
     in property <bool> wayland;
     // Shortcuts: the bindings as key caps; `recording-shortcut` is the one being recorded ("transcribe", "cancel"
-    // or "").
+    // or ""), `recording-caps` the keys held so far.
     in property <[string]> shortcut-transcribe-caps;
     in property <[string]> shortcut-cancel-caps;
     in property <string> shortcut-activation;
     in property <string> shortcut-transcribe-error;
     in property <string> recording-shortcut;
+    in property <[string]> recording-caps;
     callback record-shortcut(key: string);
     callback stop-recording-shortcut();
     callback reset-shortcut(key: string);

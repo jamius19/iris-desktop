@@ -3,8 +3,8 @@
 * Since: 16/11/2026
 */
 
-// Desktop-only: a global shortcut as key caps in a field box. Click (or Enter/Space) → "Press keys…" while the keys
-// are read by handy-keys (Rust); Esc cancels; the trash resets the default.
+// Desktop-only: a global shortcut as key caps in a field box. Click (or Enter/Space) → "Press keys…", then the keys
+// held so far, read by handy-keys (Rust); Esc or leaving the field cancels; the trash resets the default.
 
 import { Theme, Type, Metrics, Icons } from "../theme.slint";
 import { Nav } from "../globals.slint";
@@ -16,6 +16,8 @@ export component ShortcutField inherits FieldGroup {
     // The binding's keys as shown ("Ctrl", "Space").
     in property <[string]> caps;
     in property <bool> recording;
+    // While recording: the keys held so far.
+    in property <[string]> pressed;
     callback record();
     callback stop-recording();
     callback reset();
@@ -37,8 +39,10 @@ export component ShortcutField inherits FieldGroup {
             touch := TouchArea {
                 mouse-cursor: pointer;
                 clicked => {
-                    scope.focus();
-                    root.record();
+                    if !root.recording {
+                        scope.focus();
+                        root.record();
+                    }
                 }
             }
             if touch.has-hover && !root.recording: Rectangle {
@@ -50,15 +54,15 @@ export component ShortcutField inherits FieldGroup {
                 padding-right: 7px;
                 spacing: 4px;
                 alignment: start;
-                if root.recording: Label {
+                if root.recording && root.pressed.length == 0: Label {
                     text: "Press keys…";
                     style: Type.field;
                     color: Theme.muted;
                     wrap: no-wrap;
                 }
-                if !root.recording: HorizontalLayout {
+                if !root.recording || root.pressed.length > 0: HorizontalLayout {
                     spacing: 4px;
-                    for cap in root.caps: VerticalLayout {
+                    for cap in root.recording ? root.pressed : root.caps: VerticalLayout {
                         alignment: center;
                         Rectangle {
                             border-radius: 4px;
@@ -80,7 +84,9 @@ export component ShortcutField inherits FieldGroup {
                 }
             }
             // Keeps keyboard focus while recording, so Esc cancels here instead of going back a page.
+            // Not focused by the press itself: that would take the press from the TouchArea below.
             scope := FocusScope {
+                focus-on-click: false;
                 key-pressed(event) => {
                     if root.recording {
                         if event.text == Key.Escape {

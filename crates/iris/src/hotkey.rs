@@ -4,18 +4,18 @@
 */
 
 //! Global shortcuts, from Handy `shortcut/handy_keys.rs`: one thread owns the shortcuts and, while the settings UI
-//! records a shortcut, a capture. Key events come from handy-keys `KeyboardListener`s (Windows: the low-level hook,
-//! which blocks the bound keys; Linux: evdev, read-only, needs only `/dev/input` read access), each forwarded by its
-//! own thread into the hotkey thread's channel, so that thread sleeps until a command or a key event arrives
-//! (handy-keys `HotkeyManager` can only be polled next to the commands). [`Matcher`] is the manager's matching. Key
-//! auto-repeat doesn't repeat `Pressed`: the matcher tracks held hotkeys.
+//! records a shortcut, a capture. Key events come from one handy-keys `KeyboardListener` (Windows: the low-level hook,
+//! which blocks the bound keys; Linux: evdev, read-only, needs only `/dev/input` read access), forwarded by its own
+//! thread into the hotkey thread's channel, so that thread sleeps until a command or a key event arrives (handy-keys
+//! `HotkeyManager` can only be polled next to the commands). While recording, its events go to the capture instead of
+//! the shortcuts: unlike Handy, no second listener (on Windows, one created per recording got no key events in the
+//! app). [`Matcher`] is the manager's matching. Key auto-repeat doesn't repeat `Pressed`: the matcher tracks held
+//! hotkeys.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, PoisonError};
 use std::thread;
-use std::time::Duration;
 
 use handy_keys::{BlockingHotkeys, Error, Hotkey, Key, KeyEvent, KeyboardListener};
 
@@ -35,15 +35,16 @@ pub enum ShortcutStatus {
 }
 
 type OnDone = Box<dyn FnOnce(Option<String>) + Send>;
+type OnKeys = Box<dyn Fn(String) + Send>;
 type OnStatus = Box<dyn FnOnce(ShortcutStatus) + Send>;
 
 enum Message {
     Transcribe(String, OnStatus),
     Cancel(Option<String>),
-    Record(OnDone),
+    Record(OnKeys, OnDone),
     StopRecording,
-    /// A key event from the shortcut listener (None) or from recording `n`'s listener.
-    Key(Option<u64>, KeyEvent),
+    /// A key event from the listener.
+    Key(KeyEvent),
     /// The last [Hotkeys] clone was dropped.
     Stop,
 }
@@ -86,10 +87,15 @@ impl Hotkeys {
         let _ = self.messages.send(Message::Cancel(binding.map(str::to_owned)));
     }
 
-    /// Shortcut capture for the settings UI: calls `on_done` once with Some(binding in handy-keys syntax) or None (Esc
-    /// / failure). The transcribe shortcut is suspended meanwhile.
-    pub fn record(&self, on_done: impl FnOnce(Option<String>) + Send + 'static) {
-        let _ = self.messages.send(Message::Record(Box::new(on_done)));
+    /// Shortcut capture for the settings UI: calls `on_keys` with the keys held so far whenever they change (handy-keys
+    /// syntax), then `on_done` once with Some(binding) or None (Esc / failure). The transcribe shortcut is suspended
+    /// meanwhile.
+    pub fn record(
+        &self,
+        on_keys: impl Fn(String) + Send + 'static,
+        on_done: impl FnOnce(Option<String>) + Send + 'static,
+    ) {
+        let _ = self.messages.send(Message::Record(Box::new(on_keys), Box::new(on_done)));
     }
 
     pub fn stop_recording(&self) {
@@ -129,33 +135,48 @@ pub fn install_udev_rule() -> Result<(), String> {
     Ok(())
 }
 
-/// Blocks on the channel: commands from [Hotkeys] and key events from the listeners' forwarding threads.
+/// Blocks on the channel: commands from [Hotkeys] and key events from the listener's forwarding thread.
 fn run(messages: Receiver<Message>, forwarders: Sender<Message>, on_event: impl Fn(HotkeyEvent)) {
     let mut state = State::new(forwarders);
     while let Ok(message) = messages.recv() {
         match message {
             Message::Transcribe(binding, on_status) => on_status(state.register_transcribe(binding)),
             Message::Cancel(binding) => state.set_cancel(binding),
-            Message::Record(on_done) => state.record(on_done),
-            Message::StopRecording => state.finish_recording(None),
-            Message::Key(None, event) => {
-                for (slot, pressed) in state.matcher.process(&event) {
-                    match slot {
-                        Slot::Transcribe => on_event(HotkeyEvent::Transcribe { pressed }),
-                        Slot::Cancel if pressed => on_event(HotkeyEvent::Cancel),
-                        Slot::Cancel => {}
+            Message::Record(on_keys, on_done) => state.record(on_keys, on_done),
+            Message::StopRecording => {
+                log::debug!("Shortcut recording: stop requested");
+                state.finish_recording(None);
+            }
+            Message::Key(event) => match &mut state.recording {
+                Some(recording) => {
+                    log::debug!(
+                        "Shortcut recording: {:?} {:?} {}",
+                        event.modifiers,
+                        event.key,
+                        if event.is_key_down { "down" } else { "up" }
+                    );
+                    let shown = recording.capture.partial.clone();
+                    let done = recording.capture.on_key(&event);
+                    if done.is_none()
+                        && recording.capture.partial != shown
+                        && let Some(keys) = &recording.capture.partial
+                    {
+                        (recording.on_keys)(keys.clone());
+                    }
+                    if let Some(binding) = done {
+                        state.finish_recording(binding);
                     }
                 }
-            }
-            Message::Key(Some(id), event) => {
-                let done = match &mut state.recording {
-                    Some(recording) if recording.id == id => recording.capture.on_key(&event),
-                    _ => None,
-                };
-                if let Some(binding) = done {
-                    state.finish_recording(binding);
+                None => {
+                    for (slot, pressed) in state.matcher.process(&event) {
+                        match slot {
+                            Slot::Transcribe => on_event(HotkeyEvent::Transcribe { pressed }),
+                            Slot::Cancel if pressed => on_event(HotkeyEvent::Cancel),
+                            Slot::Cancel => {}
+                        }
+                    }
                 }
-            }
+            },
             Message::Stop => break,
         }
     }
@@ -164,27 +185,11 @@ fn run(messages: Receiver<Message>, forwarders: Sender<Message>, on_event: impl 
     state.blocked().clear();
 }
 
-/// Forwards the shortcut listener's events until the hotkey thread is gone (noticed at the next event).
-fn forward_shortcut_keys(listener: KeyboardListener, messages: Sender<Message>) {
+/// Forwards the listener's events until the hotkey thread is gone (noticed at the next event).
+fn forward_keys(listener: KeyboardListener, messages: Sender<Message>) {
     while let Ok(event) = listener.recv() {
-        if messages.send(Message::Key(None, event)).is_err() {
+        if messages.send(Message::Key(event)).is_err() {
             break;
-        }
-    }
-}
-
-/// Forwards a recording listener's events until the recording ends; checked every 100 ms (only while recording), so
-/// the listener closes soon after.
-fn forward_recording_keys(listener: KeyboardListener, id: u64, ended: Arc<AtomicBool>, messages: Sender<Message>) {
-    while !ended.load(Ordering::SeqCst) {
-        match listener.recv_timeout(Duration::from_millis(100)) {
-            Ok(event) => {
-                if messages.send(Message::Key(Some(id), event)).is_err() {
-                    break;
-                }
-            }
-            Err(Error::Timeout) => {}
-            Err(_) => break,
         }
     }
 }
@@ -225,17 +230,15 @@ impl Matcher {
 }
 
 struct Recording {
-    id: u64,
-    /// Tells the forwarding thread to stop (it then drops the listener).
-    ended: Arc<AtomicBool>,
     capture: Capture,
+    on_keys: OnKeys,
     on_done: OnDone,
 }
 
 struct State {
-    /// For the forwarding threads.
+    /// For the forwarding thread.
     messages: Sender<Message>,
-    /// The shortcut listener is running: started on the first registration and retried on each one until it works
+    /// The listener is running: started on the first registration or recording and retried on each one until it works
     /// (Linux: after the udev rule).
     listening: bool,
     /// The registered hotkeys, which the Windows listener blocks from other apps.
@@ -244,7 +247,6 @@ struct State {
     /// Kept to re-register after recording.
     transcribe_binding: String,
     recording: Option<Recording>,
-    recordings: u64,
 }
 
 impl State {
@@ -256,12 +258,24 @@ impl State {
             matcher: Matcher::default(),
             transcribe_binding: String::new(),
             recording: None,
-            recordings: 0,
         }
     }
 
     fn blocked(&self) -> std::sync::MutexGuard<'_, HashSet<Hotkey>> {
         self.blocking.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn listen(&mut self) -> handy_keys::Result<()> {
+        if !self.listening {
+            let listener = new_listener(&self.blocking)?;
+            let messages = self.messages.clone();
+            thread::Builder::new()
+                .name("hotkeys-listener".into())
+                .spawn(move || forward_keys(listener, messages))
+                .expect("couldn't start the hotkey listener thread");
+            self.listening = true;
+        }
+        Ok(())
     }
 
     fn register(&mut self, slot: Slot, binding: &str) -> Result<(), ShortcutStatus> {
@@ -270,15 +284,7 @@ impl State {
             status(&e)
         };
         let hotkey: Hotkey = binding.parse().map_err(fail)?;
-        if !self.listening {
-            let listener = new_listener(&self.blocking).map_err(fail)?;
-            let messages = self.messages.clone();
-            thread::Builder::new()
-                .name("hotkeys-listener".into())
-                .spawn(move || forward_shortcut_keys(listener, messages))
-                .expect("couldn't start the hotkey listener thread");
-            self.listening = true;
-        }
+        self.listen().map_err(fail)?;
         if self.matcher.hotkeys.values().any(|registered| *registered == hotkey) {
             return Err(fail(Error::HotkeyAlreadyRegistered(hotkey.to_string())));
         }
@@ -311,33 +317,25 @@ impl State {
         }
     }
 
-    fn record(&mut self, on_done: OnDone) {
+    fn record(&mut self, on_keys: OnKeys, on_done: OnDone) {
         self.finish_recording(None);
-        match KeyboardListener::new() {
-            Ok(listener) => {
-                // Suspended so the recorded keys can't start a dictation (Handy's suspend_all_shortcuts).
-                self.unregister(Slot::Transcribe);
-                self.recordings += 1;
-                let (id, ended, messages) = (self.recordings, Arc::new(AtomicBool::new(false)), self.messages.clone());
-                let thread_ended = ended.clone();
-                thread::Builder::new()
-                    .name("shortcut-recording".into())
-                    .spawn(move || forward_recording_keys(listener, id, thread_ended, messages))
-                    .expect("couldn't start the shortcut recording thread");
-                self.recording = Some(Recording { id, ended, capture: Capture::default(), on_done });
-            }
-            Err(e) => {
-                log::warn!("Couldn't record a shortcut: {e}");
-                on_done(None);
-            }
+        if let Err(e) = self.listen() {
+            log::warn!("Couldn't record a shortcut: {e}");
+            on_done(None);
+            return;
         }
+        // Suspended so the recorded keys can't start a dictation (Handy's suspend_all_shortcuts); the cancel shortcut
+        // gets no events meanwhile.
+        self.unregister(Slot::Transcribe);
+        self.recording = Some(Recording { capture: Capture::default(), on_keys, on_done });
+        log::debug!("Shortcut recording started");
     }
 
     fn finish_recording(&mut self, binding: Option<String>) {
-        let Some(Recording { ended, on_done, .. }) = self.recording.take() else {
+        let Some(Recording { on_done, .. }) = self.recording.take() else {
             return;
         };
-        ended.store(true, Ordering::SeqCst);
+        log::debug!("Shortcut recording ended: {binding:?}");
         if !self.matcher.hotkeys.contains_key(&Slot::Transcribe) && !self.transcribe_binding.is_empty() {
             let _ = self.register(Slot::Transcribe, &self.transcribe_binding.clone());
         }
@@ -373,6 +371,8 @@ fn status(error: &Error) -> ShortcutStatus {
 struct Capture {
     keyed: Option<String>,
     modifier_only: Option<String>,
+    /// The keys held at the last key down, shown while recording (Handy's `partial`).
+    partial: Option<String>,
 }
 
 impl Capture {
@@ -383,6 +383,7 @@ impl Capture {
         }
         let hotkey = event.as_hotkey().ok().map(|hotkey| hotkey.to_handy_string());
         if event.is_key_down {
+            self.partial = hotkey.clone().or(self.partial.take());
             if event.key.is_some() {
                 self.keyed = hotkey.or(self.keyed.take());
             } else {
@@ -399,6 +400,8 @@ impl Capture {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use handy_keys::Modifiers;
 
     use super::*;
@@ -440,6 +443,91 @@ mod tests {
         let done = capture.on_key(&key(Modifiers::empty(), None, false));
 
         assert_eq!(done, Some(Some("ctrl_left+shift_left".into())));
+    }
+
+    #[test]
+    fn partial_follows_the_keys_pressed() {
+        let mut capture = Capture::default();
+        capture.on_key(&key(Modifiers::CTRL_LEFT, None, true));
+        assert_eq!(capture.partial.as_deref(), Some("ctrl_left"));
+        capture.on_key(&key(Modifiers::CTRL_LEFT | Modifiers::SHIFT_LEFT, None, true));
+        assert_eq!(capture.partial.as_deref(), Some("ctrl_left+shift_left"));
+        capture.on_key(&key(Modifiers::CTRL_LEFT | Modifiers::SHIFT_LEFT, Some(Key::K), true));
+        assert_eq!(capture.partial.as_deref(), Some("ctrl_left+shift_left+k"));
+        capture.on_key(&key(Modifiers::CTRL_LEFT, None, false));
+        assert_eq!(capture.partial.as_deref(), Some("ctrl_left+shift_left+k"));
+    }
+
+    /// The hotkey thread end to end, with key events as the recording listener forwards them.
+    #[test]
+    fn recording_reports_keys_then_the_binding() {
+        let hotkeys = Hotkeys::start(|_| {});
+        let (sender, results) = mpsc::channel();
+        let done = sender.clone();
+        hotkeys.record(
+            move |keys| sender.send(format!("keys {keys}")).unwrap(),
+            move |binding| done.send(format!("done {binding:?}")).unwrap(),
+        );
+        for event in [
+            key(Modifiers::CTRL_LEFT, None, true),
+            key(Modifiers::CTRL_LEFT | Modifiers::SHIFT_LEFT, None, true),
+            key(Modifiers::CTRL_LEFT | Modifiers::SHIFT_LEFT, Some(Key::K), true),
+            key(Modifiers::CTRL_LEFT | Modifiers::SHIFT_LEFT, Some(Key::K), false),
+        ] {
+            hotkeys.messages.send(Message::Key(event)).unwrap();
+        }
+        let got: Vec<String> = (0..4).map(|_| results.recv_timeout(Duration::from_secs(5)).unwrap()).collect();
+        assert_eq!(
+            got,
+            [
+                "keys ctrl_left",
+                "keys ctrl_left+shift_left",
+                "keys ctrl_left+shift_left+k",
+                "done Some(\"ctrl_left+shift_left+k\")"
+            ]
+        );
+    }
+
+    #[cfg(windows)]
+    fn tap_f24() {
+        #[link(name = "user32")]
+        unsafe extern "system" {
+            fn keybd_event(vk: u8, scan: u8, flags: u32, extra: usize);
+        }
+        // SAFETY: plain key injection; F24 types nothing.
+        unsafe {
+            keybd_event(0x87, 0, 0, 0);
+            keybd_event(0x87, 0, 2, 0);
+        }
+    }
+
+    /// The real hook: a plain listener sees an injected F24.
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "injects a real F24 key press"]
+    fn real_listener_sees_injected_key() {
+        let listener = KeyboardListener::new().unwrap();
+        thread::sleep(Duration::from_millis(300));
+        tap_f24();
+        let event = listener.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert_eq!(event.key, Some(Key::F24));
+    }
+
+    /// The real hook through the app's path: shortcut registered, then a recording.
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "injects a real F24 key press"]
+    fn real_recording_sees_injected_key() {
+        let hotkeys = Hotkeys::start(|_| {});
+        let (status_tx, status) = mpsc::channel();
+        hotkeys.register_transcribe("ctrl+space", move |s| status_tx.send(s).unwrap());
+        assert_eq!(status.recv_timeout(Duration::from_secs(5)).unwrap(), ShortcutStatus::Registered);
+        let (sender, results) = mpsc::channel();
+        hotkeys.record(move |keys| sender.send(keys).unwrap(), |_| {});
+        thread::sleep(Duration::from_millis(300));
+        tap_f24();
+        assert_eq!(results.recv_timeout(Duration::from_secs(2)).unwrap(), "f24");
+        hotkeys.stop_recording();
     }
 
     #[test]
