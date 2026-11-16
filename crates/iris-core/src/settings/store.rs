@@ -48,8 +48,8 @@ impl Store {
 
     /// Loads [path]; a missing file is empty. A corrupt (or newer-version) file is moved aside to
     /// `settings.json.corrupt-<unix seconds>` and reads as empty; an invalid entry is dropped (the file copied aside
-    /// first). An unreadable file, or one that couldn't be set aside, reads as empty and makes every edit fail, so it is
-    /// never overwritten. All logged.
+    /// first). An unreadable file, or one that couldn't be set aside, reads as empty and makes every edit fail, so it
+    /// is never overwritten. All logged.
     pub fn open(path: PathBuf) -> Store {
         let mut unwritable = false;
         let values = match fs::read(&path) {
@@ -81,6 +81,19 @@ impl Store {
         model::to_settings(&self.values, stored_secrets).unwrap_or_else(|e| {
             log::warn!("Invalid settings, using defaults: {e}");
             model::to_settings(&Values::new(), stored_secrets).expect("defaults are valid")
+        })
+    }
+
+    /// The stored values as saved (unknown keys included).
+    pub fn values(&self) -> &Values {
+        &self.values
+    }
+
+    /// Replaces every stored value with [values] (backup restore: anything not in [values] is removed).
+    pub fn replace_all(&mut self, values: Values) -> io::Result<()> {
+        self.edit(|current| {
+            *current = values;
+            Ok(())
         })
     }
 
@@ -462,13 +475,19 @@ struct SettingsFile {
 
 /// A value as a string, parsed by [type] (Android's backup `TypedValue`).
 #[derive(Serialize, Deserialize)]
-struct TypedValue {
+pub(crate) struct TypedValue {
     r#type: String,
     value: String,
 }
 
 fn encode_file(values: &Values) -> Vec<u8> {
-    let settings = values
+    serde_json::to_vec_pretty(&SettingsFile { version: FILE_VERSION, settings: encode_values(values) })
+        .expect("serialisable")
+}
+
+/// [values] as typed strings (the file's and the backup payload's `settings`).
+pub(crate) fn encode_values(values: &Values) -> BTreeMap<String, TypedValue> {
+    values
         .iter()
         .map(|(name, value)| {
             let (r#type, value) = match value {
@@ -480,8 +499,7 @@ fn encode_file(values: &Values) -> Vec<u8> {
             };
             (name.clone(), TypedValue { r#type: r#type.to_string(), value })
         })
-        .collect();
-    serde_json::to_vec_pretty(&SettingsFile { version: FILE_VERSION, settings }).expect("serialisable")
+        .collect()
 }
 
 /// Errs on malformed JSON, a newer version, a blank name, an unknown type or a value its type can't parse (as Android's
@@ -491,7 +509,12 @@ fn decode_file(bytes: &[u8]) -> Result<Values, String> {
     if file.version > FILE_VERSION {
         return Err(format!("version {} is newer than {FILE_VERSION}", file.version));
     }
-    file.settings
+    decode_values(file.settings)
+}
+
+/// Typed strings as values; errs on a blank name, an unknown type or a value its type can't parse.
+pub(crate) fn decode_values(settings: BTreeMap<String, TypedValue>) -> Result<Values, String> {
+    settings
         .into_iter()
         .map(|(name, typed)| {
             let bad = || format!("bad {} value for {name}", typed.r#type);

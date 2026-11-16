@@ -70,7 +70,7 @@ pub struct GatewayModel {
 }
 
 /// Runs `call` (a [`CleanupProvider::cleanup`]) within `timeout`: its result, or None on timeout. Only a returned
-/// text's duration goes to `record` (statistics, M4); a timeout or a failure records nothing.
+/// text's duration goes to `record` (statistics); a timeout or a failure records nothing.
 pub async fn timed_cleanup<T, E>(
     timeout: Duration,
     record: impl FnOnce(Duration),

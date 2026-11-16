@@ -3,9 +3,9 @@
 * Since: 16/11/2026
 */
 
-//! About page: the licence texts (the generated Rust libraries text comes in M4).
+//! About page: the licence texts, and the generated Rust libraries text by line.
 
-use slint::ComponentHandle;
+use slint::{ComponentHandle, SharedString};
 
 use super::model;
 use crate::{App, Licence, MainWindow};
@@ -21,8 +21,11 @@ const LICENCES: [(&str, &str); 8] = [
     ("Handy (MIT, ported code)", include_str!("../../../../assets/licenses/handy_LICENSE.txt")),
 ];
 
+const RUST_LICENCES: &str = include_str!("../../../../assets/licenses/THIRD_PARTY_LICENSES.txt");
+
 pub fn fill(window: &MainWindow) {
     let licences =
         LICENCES.into_iter().map(|(title, text)| Licence { title: title.into(), text: text.trim().into() }).collect();
     window.global::<App>().set_licences(model(licences));
+    window.global::<App>().set_rust_licences(model(RUST_LICENCES.trim().lines().map(SharedString::from).collect()));
 }

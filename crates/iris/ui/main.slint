@@ -9,7 +9,7 @@
 // button too, from Rust).
 
 import { Theme, Icons, Type } from "theme.slint";
-import { Prefs, UiMath, Nav, Services, Copy, App } from "globals.slint";
+import { Prefs, UiMath, Nav, Services, Copy, App, Stats, Backup } from "globals.slint";
 import { HomePage } from "pages/home.slint";
 import { TranscriptionPage } from "pages/transcription.slint";
 import { PostProcessingPage } from "pages/post_processing.slint";
@@ -17,10 +17,14 @@ import { CustomWordsPage } from "pages/custom_words.slint";
 import { AppearancePage } from "pages/appearance.slint";
 import { DictationPage } from "pages/dictation.slint";
 import { AboutPage } from "pages/about.slint";
+import { StatisticsPage } from "pages/statistics.slint";
+import { BackupPage } from "pages/backup.slint";
 
-export { Prefs, UiMath, Nav, Services, Copy, App, Icons, Type }
+export { Prefs, UiMath, Nav, Services, Copy, App, Stats, Backup, Icons, Type }
+export { IrisTray, TrayStatus } from "tray.slint";
 
-// Page ids: 0 Home, 1 Transcription, 2 Post Processing, 3 Custom Words, 4 Appearance, 5 Dictation, 6 About.
+// Page ids: 0 Home, 1 Transcription, 2 Post Processing, 3 Custom Words, 4 Appearance, 5 Dictation, 6 About,
+// 7 Statistics, 8 Backup and Restore.
 export component MainWindow inherits Window {
     title: "Iris";
     icon: @image-url("../../../assets/icons/app/iris-256.png");
@@ -63,6 +67,9 @@ export component MainWindow inherits Window {
         scope.focus();
         if root.page == 2 {
             Prefs.discard-draft();
+        }
+        if root.page == 8 {
+            Backup.left();
         }
         if to == 0 {
             Services.recheck();
@@ -129,6 +136,14 @@ export component MainWindow inherits Window {
         }
         if root.shown(6): AboutPage {
             x: root.page-x(6);
+            back => { root.go-back(); }
+        }
+        if root.shown(7): StatisticsPage {
+            x: root.page-x(7);
+            back => { root.go-back(); }
+        }
+        if root.shown(8): BackupPage {
+            x: root.page-x(8);
             back => { root.go-back(); }
         }
         if root.shown(3): CustomWordsPage {

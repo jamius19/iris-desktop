@@ -40,9 +40,8 @@ pub struct OpenAiRealtimeSpeechToText {
 }
 
 impl OpenAiRealtimeSpeechToText {
-    /// The WebSocket opens its own connection (no warm-up on desktop), so `_client` isn't used; it is taken like the
-    /// other OpenAI calls'.
-    pub fn new(_client: reqwest::Client, api_key: KeySource) -> Self {
+    /// The WebSocket opens its own connection (no warm-up on desktop), so no HTTP client.
+    pub fn new(api_key: KeySource) -> Self {
         OpenAiRealtimeSpeechToText {
             api_key,
             url: REALTIME_URL.into(),
@@ -209,6 +208,7 @@ fn connect_failure(error: WsConnectError) -> SttError {
     match error {
         WsConnectError::InvalidHeader(_) => SttError(INVALID_API_KEY.into()),
         WsConnectError::Http { status, .. } => SttError(connection_failure_message(Some(status), "")),
+        WsConnectError::NoSubProtocol => unreachable!("no subprotocol is asked for"),
         WsConnectError::Network(e) => network_failure(&e),
     }
 }

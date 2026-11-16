@@ -6,7 +6,7 @@
 //! X11 mode: Slint's winit backend on X11 or XWayland (`WAYLAND_DISPLAY` removed first), an override-redirect
 //! notification window that never takes focus, placed on the monitor under the pointer, else the primary. Its X input
 //! region is the card, so clicks beside it reach the windows below. On XWayland the pointer is only known over X
-//! windows (R3).
+//! windows.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;

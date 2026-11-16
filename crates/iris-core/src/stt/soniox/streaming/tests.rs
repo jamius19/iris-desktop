@@ -478,12 +478,7 @@ async fn empty_audio_still_sends_start_then_end() {
 
 #[test]
 fn streams_at_16k_hz_as_recorded() {
-    let stt = SonioxSpeechToText::new(
-        net::http_client(),
-        Arc::new(|| Ok(None)),
-        Arc::new(|_| Box::pin(async { None })),
-        SonioxRegion::Us,
-    );
+    let stt = SonioxSpeechToText::new(Arc::new(|| Ok(None)), Arc::new(|_| Box::pin(async { None })), SonioxRegion::Us);
     assert!(stt.streams());
     assert!(stt.live_text("stt-rt-v6"));
     assert!(!stt.allows_speed_up());
@@ -531,4 +526,28 @@ async fn unwritable_socket_fails_the_session_while_recording() {
     .expect("the write timeout ended the session");
 
     assert_eq!(Err(SttError("Network error: timeout".into())), error);
+}
+
+// Desktop: pings are sent by the session (OkHttp's pingInterval).
+
+#[tokio::test]
+async fn missed_pong_fails_the_session() {
+    // Never reads, so never answers a ping.
+    let server = WsServer::start(|_request, socket| async move {
+        sleep(Duration::from_secs(10)).await;
+        drop(socket);
+    })
+    .await;
+    let stt = SonioxSpeechToText {
+        ping_interval: Duration::from_millis(100),
+        ..SonioxSpeechToText::with_url(
+            Arc::new(|| Ok(Some("sx-test".into()))),
+            Arc::new(|_| Box::pin(async { None })),
+            &server.url("/transcribe-websocket"),
+        )
+    };
+
+    let error = run(&stt, endless_audio(), request("", TIMEOUT, &[]), ignore()).await;
+
+    assert_eq!(Err(network_error(&NetError::ping_timeout())), error);
 }

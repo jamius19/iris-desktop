@@ -4,7 +4,7 @@
 */
 
 //! Iris desktop's UI-free logic: settings, secrets, copy helpers, UI math, cleanup, speech-to-text, the providers'
-//! networking, audio processing and dictation helpers.
+//! networking, audio processing, dictation helpers and the update check.
 
 pub mod audio;
 pub mod cleanup;
@@ -14,3 +14,4 @@ pub mod net;
 pub mod settings;
 pub mod stt;
 pub mod ui_math;
+pub mod update_check;

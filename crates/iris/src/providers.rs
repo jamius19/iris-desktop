@@ -78,8 +78,7 @@ impl Providers {
             .into_iter()
             .map(|region| {
                 let api_key = key(secrets::SONIOX_API_KEY);
-                let stream: Stt =
-                    Arc::new(SonioxSpeechToText::new(client.clone(), api_key.clone(), model_info.clone(), region));
+                let stream: Stt = Arc::new(SonioxSpeechToText::new(api_key.clone(), model_info.clone(), region));
                 let file: Stt =
                     Arc::new(SonioxFileTranscription::new(client.clone(), api_key, model_info.clone(), region));
                 (region, stream, file)
@@ -89,12 +88,12 @@ impl Providers {
             (key(secrets::OPENAI_API_KEY), key(secrets::GATEWAY_API_KEY), key(secrets::DEEPGRAM_API_KEY));
         Self {
             on_device,
-            openai: Arc::new(OpenAiRealtimeSpeechToText::new(client.clone(), openai_key.clone())),
+            openai: Arc::new(OpenAiRealtimeSpeechToText::new(openai_key.clone())),
             openai_file: Arc::new(OpenAiFileTranscription::new(client.clone(), openai_key)),
             // Both share the API key with cleanup.
-            gateway: Arc::new(VercelGatewaySpeechToText::new(client.clone(), gateway_key.clone())),
+            gateway: Arc::new(VercelGatewaySpeechToText::new(gateway_key.clone())),
             gateway_file: Arc::new(VercelGatewayFileTranscription::new(client.clone(), gateway_key.clone())),
-            deepgram: Arc::new(DeepgramSpeechToText::new(client.clone(), deepgram_key.clone())),
+            deepgram: Arc::new(DeepgramSpeechToText::new(deepgram_key.clone())),
             deepgram_file: Arc::new(DeepgramFileTranscription::new(client.clone(), deepgram_key)),
             soniox: Arc::new(soniox),
             soniox_catalog,

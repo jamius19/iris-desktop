@@ -7,7 +7,9 @@
 //! the virtual time it is sent.
 
 use super::*;
-use crate::settings::{STT_PROVIDER_OPENAI, STT_PROVIDER_SONIOX, STT_PROVIDER_VERCEL_GATEWAY, Values, to_settings};
+use crate::settings::{
+    STT_PROVIDER_ON_DEVICE, STT_PROVIDER_OPENAI, STT_PROVIDER_SONIOX, STT_PROVIDER_VERCEL_GATEWAY, Values, to_settings,
+};
 use crate::stt::OnPartial;
 use std::collections::HashSet;
 use std::f64::consts::PI;
@@ -349,6 +351,8 @@ struct Setup {
     /// None: collects the text in `finals` and shows it as Done.
     on_final_transcript: Option<Hook>,
     detect_language: Detector,
+    /// The record calls (and a test hook's) in order: "record", "hook".
+    events: Shared<Vec<&'static str>>,
 }
 
 impl Setup {
@@ -361,6 +365,7 @@ impl Setup {
             vad_model: None,
             on_final_transcript: None,
             detect_language: Box::new(|_| Box::pin(async { None })),
+            events: Shared::default(),
         }
     }
 
@@ -374,6 +379,8 @@ impl Setup {
         let (audio, level, stt) = (self.audio, self.level, self.stt);
         let (audio_released, rate) = (released.clone(), recorded_rate.clone());
         let collected = finals.clone();
+        let records = Shared::<Vec<(Settings, DictationRecord)>>::default();
+        let (recorded, events) = (records.clone(), self.events);
         let deps = Deps {
             audio: Box::new(move |r| {
                 rate.store(r, Ordering::SeqCst);
@@ -388,11 +395,18 @@ impl Setup {
                     Box::pin(async move { done(&text) })
                 })
             }),
-            vad_model: self.vad_model.unwrap_or_else(|| Box::new(|| panic!("VAD off"))),
+            vad_model: match self.vad_model {
+                Some(model) => Box::new(move || Box::pin(std::future::ready(model()))),
+                None => Box::new(|| panic!("VAD off")),
+            },
             detect_language: self.detect_language,
+            record: Box::new(move |s, d| {
+                events.lock().unwrap().push("record");
+                recorded.lock().unwrap().push((s.clone(), d));
+            }),
         };
         let controller = DictationController::new(Handle::current(), deps);
-        Harness { controller, finals, released, recorded_rate, warm_ups }
+        Harness { controller, finals, released, recorded_rate, warm_ups, records }
     }
 }
 
@@ -403,6 +417,7 @@ struct Harness {
     recorded_rate: Arc<AtomicU32>,
     /// The settings of every cleanup warm-up.
     warm_ups: Shared<Vec<Settings>>,
+    records: Shared<Vec<(Settings, DictationRecord)>>,
 }
 
 impl Harness {
@@ -424,6 +439,17 @@ impl Harness {
 
     fn recorded_rate(&self) -> u32 {
         self.recorded_rate.load(Ordering::SeqCst)
+    }
+
+    fn records(&self) -> Vec<(Settings, DictationRecord)> {
+        self.records.lock().unwrap().clone()
+    }
+
+    /// The only record.
+    fn record(&self) -> DictationRecord {
+        let records = self.records();
+        assert_eq!(1, records.len());
+        records[0].1
     }
 
     /// Starts, stops after the first chunk and lets the chunk recorded during the stop end the audio.
@@ -1158,6 +1184,168 @@ async fn speed_200_without_speech_still_ends_with_no_speech_and_sends_nothing() 
     assert!(stt.received().is_empty());
 }
 
+/// [`frames`] at 16 kHz (32 ms each): frames 0..100 before the stop at 3,210 ms, frame 101 ends the audio.
+async fn dictate_frames(h: &Harness, after_stop_ms: u64) {
+    h.dictate_for(100 * 32 + 10, after_stop_ms).await;
+}
+
+fn frames_setup(fake: FakeStt) -> Setup {
+    Setup { audio: frames(), ..Setup::new(stt(fake.rate(16_000))) }
+}
+
+#[tokio::test(start_paused = true)]
+async fn session_is_recorded_after_the_hook_with_its_text_and_times() {
+    let events = Shared::<Vec<&'static str>>::default();
+    let hook_events = events.clone();
+    let hook: Hook = Box::new(move |_| {
+        let events = hook_events.clone();
+        Box::pin(async move {
+            events.lock().unwrap().push("hook");
+            sleep(Duration::from_millis(200)).await;
+            done("Hello, world.")
+        })
+    });
+    let h = Setup {
+        on_final_transcript: Some(hook),
+        events: events.clone(),
+        ..frames_setup(FakeStt::after(300, "Hello world"))
+    }
+    .build();
+
+    dictate_frames(&h, 32 + 300 + 200).await;
+
+    assert_eq!(done("Hello, world."), h.state());
+    assert_eq!(vec!["hook", "record"], *events.lock().unwrap());
+    // 102 frames recorded and sent; stop at 3,210 ms, audio ends at 3,232, STT returns 300 ms later.
+    assert_eq!(
+        DictationRecord { recorded_ms: 3_264, billed_ms: 3_264, wait_ms: 322, done_ms: 522, words: 2 },
+        h.record()
+    );
+}
+
+/// Returns "Hi" after 5 chunks while still listening, like the Gateway's early `finish`.
+struct EarlyFinish;
+
+impl SpeechToTextProvider for EarlyFinish {
+    fn sample_rate(&self, _model: &str) -> u32 {
+        16_000
+    }
+
+    fn transcribe<'a>(
+        &'a self,
+        mut audio: Box<dyn AudioSource + 'a>,
+        _request: SttRequest,
+        _on_partial: OnPartial,
+    ) -> BoxFuture<'a, Result<String, SttError>> {
+        Box::pin(async move {
+            for _ in 0..5 {
+                audio.next().await?;
+            }
+            Ok("Hi".to_string())
+        })
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn transcript_before_the_stop_is_not_recorded_even_if_stop_is_tapped_during_the_hook() {
+    let hook: Hook = Box::new(|text| {
+        Box::pin(async move {
+            sleep(Duration::from_millis(500)).await;
+            done(&text)
+        })
+    });
+    let h = Setup { audio: frames(), on_final_transcript: Some(hook), ..Setup::new(Arc::new(EarlyFinish)) }.build();
+
+    h.controller.start();
+    run_current().await;
+    advance(5 * 32 + 100).await; // The transcript is in; the hook runs, the state is still Listening.
+    // Desktop: the microphone was released once the provider returned.
+    assert!(h.released());
+    h.controller.stop();
+    advance(1_000).await;
+
+    assert_eq!(done("Hi"), h.state());
+    assert!(h.records().is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn skip_silence_bills_only_the_sent_audio() {
+    let h = Setup { vad_model: Some(speech_at(&[(20, 29)])), ..frames_setup(FakeStt::replying("Hi")) }.build();
+
+    dictate_frames(&h, 32).await;
+
+    // Frames 6..81 sent (pre-roll, speech, hangover).
+    let record = h.record();
+    assert_eq!(3_264, record.recorded_ms);
+    assert_eq!(76 * 32, record.billed_ms);
+    assert_eq!(22, record.wait_ms);
+    assert_eq!(22, record.done_ms);
+}
+
+#[tokio::test(start_paused = true)]
+async fn speed_divides_the_billed_audio() {
+    let h = Setup {
+        settings: speed(150),
+        vad_model: Some(speech_at(&[(20, 29)])),
+        ..frames_setup(FakeStt::replying("Hi"))
+    }
+    .build();
+
+    dictate_frames(&h, 32).await;
+
+    assert_eq!(76 * 32 * 100 / 150, h.record().billed_ms);
+}
+
+#[tokio::test(start_paused = true)]
+async fn provider_billed_by_stream_time_bills_the_whole_recording() {
+    let h = Setup {
+        settings: speed(200),
+        vad_model: Some(speech_at(&[(20, 29)])),
+        ..frames_setup(FakeStt::replying("Hi").no_speed_up())
+    }
+    .build();
+
+    dictate_frames(&h, 32).await;
+
+    let record = h.record();
+    assert_eq!(3_264, record.billed_ms);
+    assert_eq!(record.recorded_ms, record.billed_ms);
+}
+
+#[tokio::test(start_paused = true)]
+async fn on_device_session_is_recorded_too() {
+    let settings = Settings { stt_provider_id: STT_PROVIDER_ON_DEVICE.into(), ..open_ai() };
+    let h = Setup { settings, ..frames_setup(FakeStt::replying("Hi")) }.build();
+
+    dictate_frames(&h, 32).await;
+
+    assert!(h.records()[0].0.stt_on_device());
+    assert_eq!(1, h.records().len());
+}
+
+#[tokio::test(start_paused = true)]
+async fn sessions_without_inserted_text_are_not_recorded() {
+    let panicking: Hook = Box::new(|_| Box::pin(async { panic!("Hook failed") }));
+    let harnesses = [
+        frames_setup(FakeStt::replying("  ")).build(),
+        frames_setup(FakeStt::failing("OpenAI error: Boom")).build(),
+        Setup { vad_model: Some(silence()), ..frames_setup(FakeStt::replying("Hi")) }.build(),
+        Setup { on_final_transcript: Some(panicking), ..frames_setup(FakeStt::replying("Hi")) }.build(),
+    ];
+    for h in &harnesses {
+        dictate_frames(h, 32).await;
+    }
+    let cancelled = frames_setup(FakeStt::replying("Hi")).build();
+    cancelled.controller.start();
+    run_current().await;
+    advance(500).await;
+    cancelled.controller.cancel();
+    advance(500).await;
+
+    assert!(harnesses.iter().chain([&cancelled]).all(|h| h.records().is_empty()));
+    assert!(matches!(harnesses[3].state(), DictationState::Error { .. }));
+}
+
 /// A detector that collects the texts it is asked about and answers `language`.
 fn detector(detections: &Shared<Vec<String>>, language: Option<&'static str>) -> Detector {
     let detections = detections.clone();
@@ -1174,6 +1362,7 @@ async fn fillers_are_removed_before_the_final_transcript_hook() {
 
     assert_eq!(vec!["So I think, it works"], h.finals());
     assert_eq!(done("So I think, it works"), h.state());
+    assert_eq!(5, h.record().words);
 }
 
 #[tokio::test(start_paused = true)]
@@ -1183,6 +1372,7 @@ async fn only_fillers_end_with_no_speech_and_record_nothing() {
 
     assert_eq!(error("No speech detected"), h.state());
     assert!(h.finals().is_empty());
+    assert!(h.records().is_empty());
 }
 
 #[tokio::test(start_paused = true)]

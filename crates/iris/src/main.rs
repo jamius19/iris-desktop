@@ -6,6 +6,7 @@
 // No console window in release builds on Windows.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod autostart;
 mod capture;
 mod cli;
 mod dictation;
@@ -20,6 +21,8 @@ mod services;
 #[cfg(target_os = "linux")]
 mod signals;
 mod single_instance;
+mod sounds;
+mod tray;
 mod ui;
 
 use std::fs::{self, File};
@@ -43,7 +46,10 @@ fn main() {
         std::process::exit(local::supervisor::run_worker());
     }
     local::memory::init_allocator();
-    let args = CliArgs::parse();
+    let args = CliArgs::try_parse().unwrap_or_else(|e| {
+        cli::attach_console();
+        e.exit()
+    });
     let default = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         log::error!("Panic: {info}");
@@ -51,6 +57,7 @@ fn main() {
     }));
     // Neither the headless run nor a forwarding instance touches the running app's log file.
     if let Some(file) = &args.transcribe_file {
+        cli::attach_console();
         init_logging(args.debug, false);
         std::process::exit(headless::transcribe_file(file, args.model.as_deref()));
     }
@@ -63,12 +70,9 @@ fn main() {
     if let Some(reason) = &relaunched {
         log::warn!("Using the software renderer: femtovg failed ({})", reason.to_string_lossy());
     }
-    if args.start_hidden {
-        log::info!("--start-hidden needs the tray (M4); showing the window");
-    }
     let femtovg = std::env::var_os("SLINT_BACKEND").is_none();
     select_backend();
-    if let Err(e) = ui::run() {
+    if let Err(e) = ui::run(args.start_hidden, args.no_tray) {
         // femtovg (e.g. no GL) once more with the software renderer; the relaunch has SLINT_BACKEND set.
         if femtovg {
             log::warn!("The app failed with femtovg ({e}); relaunching with the software renderer");

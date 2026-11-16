@@ -187,11 +187,6 @@ pub fn parse_upload_response(body: &str) -> Option<(String, Vec<String>)> {
     Some((text, warnings(&response)))
 }
 
-/// Whether `value` can be sent as a header value as OkHttp checks it: tab and printable ASCII only.
-pub fn is_header_value(value: &str) -> bool {
-    crate::net::is_header_value(value)
-}
-
 pub fn gateway_closed_message(reason: &str) -> String {
     if reason.trim().is_empty() {
         "AI Gateway closed the connection".to_string()

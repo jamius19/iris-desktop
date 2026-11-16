@@ -26,7 +26,7 @@ use super::protocol::{
     parse_soniox_event, soniox_authorization, soniox_closed_message, soniox_error_message, soniox_http_error_message,
     soniox_language_hints, soniox_network_error_message, soniox_start_message,
 };
-use crate::net::{self, KeySource, NetError, PING_INTERVAL, WsConnectError};
+use crate::net::{self, KeySource, NetError, WsConnectError};
 use crate::stt::{AudioSource, BoxFuture, OnPartial, SpeechToTextProvider, SttError, SttRequest};
 
 /// How long the queued audio may take to go out once the recording ended.
@@ -41,16 +41,23 @@ pub struct SonioxSpeechToText {
     url: String,
     /// A frame (audio or ping) not written within this fails the socket.
     write_timeout: Duration,
+    ping_interval: Duration,
 }
 
 impl SonioxSpeechToText {
-    /// On `region`'s WebSocket URL. `_client` is unused: the socket opens its own connection.
-    pub fn new(_client: reqwest::Client, api_key: KeySource, model_info: ModelInfo, region: SonioxRegion) -> Self {
+    /// On `region`'s WebSocket URL. The socket opens its own connection, so no HTTP client.
+    pub fn new(api_key: KeySource, model_info: ModelInfo, region: SonioxRegion) -> Self {
         Self::with_url(api_key, model_info, region.web_socket_url())
     }
 
     pub(crate) fn with_url(api_key: KeySource, model_info: ModelInfo, url: &str) -> Self {
-        SonioxSpeechToText { api_key, model_info, url: url.to_string(), write_timeout: net::WRITE_TIMEOUT }
+        SonioxSpeechToText {
+            api_key,
+            model_info,
+            url: url.to_string(),
+            write_timeout: net::WRITE_TIMEOUT,
+            ping_interval: net::PING_INTERVAL,
+        }
     }
 
     async fn session(
@@ -119,11 +126,12 @@ impl SonioxSpeechToText {
             net::connect_ws(&self.url, &[("authorization", format!("Bearer {key}"))]).await.map_err(|e| match e {
                 WsConnectError::InvalidHeader(_) => SttError("Invalid Soniox API key".into()),
                 WsConnectError::Http { status, body, .. } => SttError(soniox_http_error_message(status, &body)),
+                WsConnectError::NoSubProtocol => unreachable!("no subprotocol is asked for"),
                 WsConnectError::Network(e) => network_error(&e),
             })?;
         debug!("Timing: transcribe->ws open {} ms", started_at.elapsed().as_millis());
         let (mut sink, mut stream) = socket.split();
-        let mut ping = tokio::time::interval_at(Instant::now() + PING_INTERVAL, PING_INTERVAL);
+        let mut ping = tokio::time::interval_at(Instant::now() + self.ping_interval, self.ping_interval);
         ping.set_missed_tick_behavior(MissedTickBehavior::Delay);
         let (mut queue_open, mut awaiting_pong, mut sent) = (true, false, 0);
         let mut end_sent_at = None;

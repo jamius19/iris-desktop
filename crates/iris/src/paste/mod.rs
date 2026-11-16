@@ -22,9 +22,16 @@ use log::info;
 /// The notice when paste fails; the transcript is then left on the clipboard.
 pub const PASTE_FAILED: &str = "Couldn't paste. The text is on the clipboard.";
 
+const NOT_COPIED: &str = "Couldn't paste or copy. Your text: ";
+
 /// The notice when neither the paste nor the clipboard worked: the transcript is only in it.
 pub fn not_copied(text: &str) -> String {
-    format!("Couldn't paste or copy. Your text: {text}")
+    format!("{NOT_COPIED}{text}")
+}
+
+/// Whether a paste notice is [`not_copied`]'s (the text is then nowhere else).
+pub fn is_not_copied(notice: &str) -> bool {
+    notice.starts_with(NOT_COPIED)
 }
 
 /// arboard's clipboard, kept for the whole run (on X11 the copied text lives only as long as it). Its lock also

@@ -3,9 +3,10 @@
 * Since: 16/11/2026
 */
 
-//! `iris-overlay`, the Linux overlay helper (PLAN §2.5, §2.6): layer-shell mode when the compositor offers
-//! `zwlr_layer_shell_v1`, else X11 mode (X11 sessions, and XWayland e.g. on GNOME). Reads `ToHelper` frames on stdin,
-//! writes `FromHelper` frames on stdout, logs to stderr and exits on stdin EOF. Elsewhere it is an empty program.
+//! `iris-overlay`, the Linux overlay helper (`docs/architecture.md`, IPC and Overlay): layer-shell mode when the
+//! compositor offers `zwlr_layer_shell_v1`, else X11 mode (X11 sessions, and XWayland e.g. on GNOME). Reads `ToHelper`
+//! frames on stdin, writes `FromHelper` frames on stdout, logs to stderr and exits on stdin EOF. Elsewhere it is an
+//! empty program.
 
 #[cfg(target_os = "linux")]
 mod layer;

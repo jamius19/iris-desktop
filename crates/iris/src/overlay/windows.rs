@@ -3,11 +3,11 @@
 * Since: 16/11/2026
 */
 
-//! The overlay window in-process (S2 recipe, PLAN §2.6): winit attributes from a hook that only acts while the
-//! overlay is created, then the HWND fix-up `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW` (no `WS_EX_APPWINDOW`), kept by a
-//! subclass that answers `WM_MOUSEACTIVATE` with `MA_NOACTIVATE` and forces the bits on `WM_STYLECHANGING` (winit
-//! rewrites `GWL_EXSTYLE` on every show/hide). Placed in the cursor monitor's physical pixels as Handy's
-//! `place_windows_overlay`. A window region keeps clicks beside the card for the windows below.
+//! The overlay window in-process (S2 recipe, `docs/architecture.md`, Overlay): winit attributes from a hook that only
+//! acts while the overlay is created, then the HWND fix-up `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW` (no
+//! `WS_EX_APPWINDOW`), kept by a subclass that answers `WM_MOUSEACTIVATE` with `MA_NOACTIVATE` and forces the bits on
+//! `WM_STYLECHANGING` (winit rewrites `GWL_EXSTYLE` on every show/hide). Placed in the cursor monitor's physical pixels
+//! as Handy's `place_windows_overlay`. A window region keeps clicks beside the card for the windows below.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;

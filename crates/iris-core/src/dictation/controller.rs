@@ -9,7 +9,8 @@
 //! discards any. A finalizing session can't be stopped or restarted; it ends through the provider's own timeouts.
 //! The dictation is never lost: errors end in [`DictationState::Error`], a transcript always reaches
 //! `on_final_transcript`. A session warms its speech-to-text provider at start (an upload provider's connection for
-//! the upload after stop) and, with cleanup on, the cleanup provider at start and stop. Statistics hooks come in M4.
+//! the upload after stop) and, with cleanup on, the cleanup provider at start and stop. A stopped session whose text
+//! reached `on_final_transcript` is measured for statistics (`record`).
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -24,6 +25,7 @@ use tokio::time::Instant;
 use super::custom_words::correct_custom_words;
 use super::filler_words::{has_gated_filler, output_language, remove_filler_words};
 use super::state::DictationState;
+use super::statistics::{DictationRecord, word_count};
 use crate::audio::speech_gate::{OFFLINE_HANGOVER_MS, STREAMING_HANGOVER_MS, SpeechGate, VadScorer};
 use crate::audio::time_stretch::TimeStretch;
 use crate::settings::{DEFAULT_STT_SPEED_PERCENT, Settings};
@@ -58,6 +60,9 @@ pub type Recording = mpsc::UnboundedReceiver<Result<AudioChunk, SttError>>;
 /// Picks the speech-to-text provider for a session's settings.
 pub type SttFor = Box<dyn Fn(&Settings) -> Arc<dyn SpeechToTextProvider> + Send + Sync>;
 
+/// Gets a stopped session's measurements with its settings (statistics).
+pub type Record = Box<dyn Fn(&Settings, DictationRecord) + Send + Sync>;
+
 /// What the controller runs a session with.
 pub struct Deps {
     /// Starts recording at the given sample rate (Hz).
@@ -73,11 +78,15 @@ pub struct Deps {
     /// settings say); returns the [`DictationState::Done`] to show. It runs inside the session (still Finalizing):
     /// cancelling the session cancels it.
     pub on_final_transcript: Box<dyn Fn(String) -> BoxFuture<'static, DictationState> + Send + Sync>,
-    /// A new VAD scorer (16 kHz frame → speech probability) for each session with Skip Silence on.
-    pub vad_model: Box<dyn Fn() -> VadScorer + Send + Sync>,
+    /// A new VAD scorer (16 kHz frame → speech probability) for each session with Skip Silence on; it may load a
+    /// model, so the app builds it off the async workers.
+    pub vad_model: Box<dyn Fn() -> BoxFuture<'static, VadScorer> + Send + Sync>,
     /// The transcript's language (ISO 639-1) detected from its text, or None if unsure; only called when filler
     /// removal is on, the settings don't give the language and a language-gated filler is in the text.
     pub detect_language: Box<dyn Fn(String) -> BoxFuture<'static, Option<String>> + Send + Sync>,
+    /// Called once per session whose `on_final_transcript` returned Done (stopped, non-blank text), with the
+    /// session's settings and its measurements; must return at once. Not for a transcript that arrived before the stop.
+    pub record: Record,
 }
 
 #[derive(Clone)]
@@ -259,13 +268,13 @@ async fn session(inner: Arc<Inner>, generation: u64) -> Result<DictationState, S
     let model = config.active_stt_model().to_string();
     let rate = stt.sample_rate(&model);
     let hangover = if stt.live_text(&model) { STREAMING_HANGOVER_MS } else { OFFLINE_HANGOVER_MS };
-    let gate =
-        config.vad_enabled.then(|| SpeechGate::new(rate, hangover, (inner.deps.vad_model)(), stt.wants_segment_ends()));
+    let vad = if config.vad_enabled { Some((inner.deps.vad_model)().await) } else { None };
+    let gate = vad.map(|vad| SpeechGate::new(rate, hangover, vad, stt.wants_segment_ends()));
     // Applied after the gate and the stop: only sent chunks are stretched, and the tail is flushed at the stop (after
     // the no-speech check, so a session without speech sends nothing).
     let as_recorded = config.stt_speed_percent == DEFAULT_STT_SPEED_PERCENT || !stt.allows_speed_up();
     let stretch = (!as_recorded).then(|| TimeStretch::new(rate, config.stt_speed_percent as f32 / 100.0));
-    let audio = SessionAudio {
+    let mut audio = SessionAudio {
         inner: inner.clone(),
         generation,
         rate,
@@ -294,14 +303,40 @@ async fn session(inner: Arc<Inner>, generation: u64) -> Result<DictationState, S
             _ => None,
         })
     });
-    let transcript = stt.transcribe(Box::new(audio), request, on_partial).await?;
-    let text = without_fillers(&inner, transcript, &config).await;
+    let transcript = stt.transcribe(Box::new(&mut audio), request, on_partial).await;
+    let transcribed_at = Instant::now();
+    // Read now: a transcript that arrives before the stop (the Gateway's early `finish`) has none, and a stop during
+    // the hook must not count.
+    let stop = inner.stopped_at(generation);
+    let (recorded_ms, sent_ms) = (ms(audio.recorded_bytes, rate) as i64, ms(audio.sent_bytes, rate) as i64);
+    // Releases the microphone as soon as the provider is done with it (a transcript before the stop).
+    drop(audio);
+    let text = without_fillers(&inner, transcript?, &config).await;
     let text =
         if config.correct_similar_words { correct_custom_words(&text, config.active_custom_words()) } else { text };
     if text.trim().is_empty() {
         return Ok(DictationState::Error { message: NO_SPEECH.into() });
     }
-    Ok((inner.deps.on_final_transcript)(text).await)
+    let done = (inner.deps.on_final_transcript)(text).await;
+    if let (Some(stop), DictationState::Done { text, .. }) = (stop, &done) {
+        // Soniox real-time bills the whole stream; Speed shortens what the others get.
+        let billed_ms = if !stt.allows_speed_up() {
+            recorded_ms
+        } else if as_recorded {
+            sent_ms
+        } else {
+            sent_ms * 100 / config.stt_speed_percent as i64
+        };
+        let record = DictationRecord {
+            recorded_ms,
+            billed_ms,
+            wait_ms: transcribed_at.duration_since(stop).as_millis() as i64,
+            done_ms: stop.elapsed().as_millis() as i64,
+            words: word_count(text),
+        };
+        (inner.deps.record)(&config, record);
+    }
+    Ok(done)
 }
 
 /// `text` without filler words if the setting is on; the language from the settings, else detected from `text`.
@@ -431,7 +466,8 @@ impl SessionAudio {
     }
 }
 
-impl AudioSource for SessionAudio {
+// By reference: the session reads the byte counts after the provider is done.
+impl AudioSource for &mut SessionAudio {
     fn next(&mut self) -> BoxFuture<'_, Result<Option<Vec<u8>>, SttError>> {
         Box::pin(self.pull())
     }

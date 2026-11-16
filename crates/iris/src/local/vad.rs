@@ -7,16 +7,26 @@
 //! scorer the speech gate injects. The model ships inside the binary and is written to `<data>/vad/` on first use.
 
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock, PoisonError};
 
 use iris_core::audio::speech_gate::{VAD_FRAME_SAMPLES, VAD_RATE, VadScorer};
+use iris_core::stt::BoxFuture;
 use transcribe_cpp::{Backend, BackendMask, Model, ModelOptions, VadSessionOptions};
 
 const MODEL: &[u8] = include_bytes!("../../../../assets/models/silero-vad-v6.2-F32.gguf");
 const MODEL_FILE: &str = "silero-vad-v6.2-F32.gguf";
 
+/// [scorer] on a blocking thread (writing and loading the model takes a while), for the controller's `vad_model`.
+pub fn scorer_off_thread(data_dir: PathBuf) -> BoxFuture<'static, VadScorer> {
+    Box::pin(async move {
+        tokio::task::spawn_blocking(move || scorer(&data_dir))
+            .await
+            .unwrap_or_else(|e| failing(format!("Building the VAD scorer failed: {e}")))
+    })
+}
+
 /// A new Silero stream for one dictation. A model that can't load gives a scorer that always fails, so the gate
-/// fails open (sends everything).
+/// fails open (sends everything); the next dictation tries loading it again.
 pub fn scorer(data_dir: &Path) -> VadScorer {
     match model(data_dir) {
         Ok(model) => match model.vad_session_with(&VadSessionOptions { n_threads: 1 }) {
@@ -35,10 +45,14 @@ fn failing(error: String) -> VadScorer {
     Box::new(move |_| Err(error.clone()))
 }
 
-/// The loaded VAD model, shared by every session.
+/// The loaded VAD model, shared by every session. A failure isn't kept.
 fn model(data_dir: &Path) -> Result<Model, String> {
-    static MODEL_CELL: OnceLock<Result<Model, String>> = OnceLock::new();
-    MODEL_CELL.get_or_init(|| load(&model_path(data_dir)?)).clone()
+    static MODEL_CELL: Mutex<Option<Model>> = Mutex::new(None);
+    let mut cell = MODEL_CELL.lock().unwrap_or_else(PoisonError::into_inner);
+    if cell.is_none() {
+        *cell = Some(load(&model_path(data_dir)?)?);
+    }
+    Ok(cell.clone().expect("set above"))
 }
 
 fn load(path: &Path) -> Result<Model, String> {

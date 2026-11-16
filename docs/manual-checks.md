@@ -132,3 +132,53 @@ Gateway, OpenRouter) were fetched once and parse. Each item needs a real key for
       (warm-up); cancelling (Esc) during a per-phrase decode stops the worker and the next dictation reloads it.
 - [ ] Network drop mid-dictation (disable Wi-Fi): a readable "Network error: …" (Gateway: one reconnect first),
       never a hang past the timeouts.
+
+## M4 – Statistics, backup, tray, startup, sounds, update check, packaging
+Not checked by the implementer unless noted under "Checked": the Windows desktop was locked (no tray, sound, dialog or
+real backup checks), there was no real Linux desktop, and no packaging tool was installed.
+- [ ] Statistics fill after dictations with an on-device model, a cloud live model, a cloud upload model and cleanup;
+      verdict colours; "Audio Sent" with Skip Silence and Speed; Reset clears everything; numbers survive a restart.
+- [ ] Backup: Create Backup → save dialog (default `iris-backup-YYYYMMDD.irisbackup`) → "Backup saved."; restore it
+      → "Settings restored.", every setting and API key back (keys in Credential Manager / Seahorse), shortcut and
+      model lists follow.
+- [ ] An Android-made backup restores on desktop (keys in the keychain; desktop-only settings back to defaults) and a
+      desktop backup restores on the phone (desktop keys kept as unknown keys, Android settings applied).
+- [ ] Wrong password, a damaged file, a non-Iris file and a newer-version file show their messages; a file over 4 MiB
+      says it isn't a backup; Choose Another File; the password clears after success and when leaving the page.
+- [ ] Linux file dialogs through the XDG portal (GNOME, KDE) and the zenity fallback.
+- [ ] Tray icon idle / recording / working in light and dark taskbars (Windows 100/125/150 % DPI) and panels (KDE,
+      GNOME + AppIndicator); menu Settings / Cancel (enabled only while recording) / Quit; left click shows the window.
+- [ ] Closing the window keeps Iris in the tray and dictation working; a field being edited is saved on close and on
+      Quit; `--start-hidden`, `--no-tray`, both together; a second `iris` shows the window.
+- [ ] Linux login race: Iris started before the panel's StatusNotifierWatcher gets its tray once the panel appears.
+- [ ] Launch at Startup on → log out/in → Iris starts hidden in the tray; off removes the entry (Windows Run value,
+      `~/.config/autostart/Iris.desktop`); the AppImage registers `$APPIMAGE`.
+- [ ] Start and stop sounds at the right moments; Volume; off is silent.
+- [ ] Footer: "Checking for update" → "Up to date" (click re-checks); "Update available" (red, underlined, opens the
+      releases page) with a build whose version is older than the latest release; offline shows nothing.
+- [ ] About → Rust libraries opens fast and scrolls (femtovg and software renderer).
+- [ ] Lost transcript: make paste and copy fail (e.g. Wayland without wl-clipboard and ydotool) → the Home card shows
+      the text; Copy (once the clipboard works) and Dismiss.
+- [ ] Deleting the selected model while dictating with it ends the dictation with "Download the … model in Iris
+      settings"; a model downloaded after selecting it is warmed up (worker loads it without a dictation).
+- [ ] AI Gateway live model: the handshake succeeds (the server echoes the subprotocol); if not, the error says "AI
+      Gateway handshake failed (subprotocol)".
+- [ ] Windows: a release `iris.exe -f file.wav --model whisper-small` prints the text in PowerShell and Git Bash.
+- [ ] Packaging: `scripts/package.ps1` builds the NSIS installer; install on a clean Windows 10 VM (no Vulkan SDK), the
+      Start menu and taskbar show the icon, local models run (CPU and GPU), uninstall removes the app and the startup
+      entry; the generated `installer.nsi` includes `FileFunc.nsh` and `LogicLib.nsh`, defines no other
+      `un.onUninstSuccess` and runs the old uninstaller with `/P` on upgrade; an upgrade install keeps the startup
+      entry.
+- [ ] `scripts/package.sh` builds the .deb and AppImage; .deb on Ubuntu 24.04 and Debian 12: the hotkey works right
+      after install (udev trigger), paste works, uninstall reloads udev; AppImage on Fedora KDE (Setup button installs
+      the udev rule).
+- [ ] The release workflow on the first push to `main`: all jobs pass, tag `v<version>` and a release with three
+      artefacts; with `IRIS_ENGINE_TESTS=true` the engine tests pass on the runner.
+
+Checked by the implementers on 16/11/2026: backup format both ways on the JVM (see `decisions.md`, M4 Backup);
+Windows release `iris.exe --help` / `--version` / a bad flag print in PowerShell; autostart enable / re-enable /
+disable on Windows from a temporary test (no `Iris` value left under `Run` or `StartupApproved\Run`); `iris.exe`
+carries the icon and "Iris" version info; software-renderer captures (dark mode) of Home with the new cards, the
+footer "Up to date" and its re-check, the Statistics empty state, the Backup page (button enabling, the save and open
+dialogs appearing parented with the right name and filter, then cancelled), About → Rust libraries scrolling, Esc back
+from both new pages.

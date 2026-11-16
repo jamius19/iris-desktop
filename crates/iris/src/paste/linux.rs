@@ -4,7 +4,7 @@
 */
 
 //! Linux tools for paste, from Handy `clipboard.rs`: wl-copy / wl-paste on Wayland, xdotool on X11, ydotool on both
-//! (ydotoold socket lookup, `key --help` syntax probe). wtype, dotool and kwtype aren't ported (PLAN M2.10).
+//! (ydotoold socket lookup, `key --help` syntax probe). wtype, dotool and kwtype aren't ported.
 
 use std::env;
 use std::fs;

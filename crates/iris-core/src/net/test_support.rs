@@ -8,6 +8,7 @@
 
 use std::collections::VecDeque;
 use std::future::Future;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use tokio::net::{TcpListener, TcpStream};
@@ -38,9 +39,10 @@ impl Recorded {
 }
 
 /// Accepts WebSocket connections on 127.0.0.1 and runs `handler` on each in its own task. The upgrade answer echoes
-/// the client's first `Sec-WebSocket-Protocol`. Stops when dropped.
+/// the client's first `Sec-WebSocket-Protocol` unless [`WsServer::no_subprotocol_echo`]. Stops when dropped.
 pub struct WsServer {
     port: u16,
+    echo_subprotocol: Arc<AtomicBool>,
     rejects: Arc<Mutex<VecDeque<(u16, String)>>>,
     requests: Arc<Mutex<Vec<Recorded>>>,
     task: tokio::task::JoinHandle<()>,
@@ -54,14 +56,16 @@ impl WsServer {
     {
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let port = listener.local_addr().expect("address").port();
+        let echo_subprotocol = Arc::new(AtomicBool::new(true));
         let rejects: Arc<Mutex<VecDeque<(u16, String)>>> = Arc::default();
         let requests: Arc<Mutex<Vec<Recorded>>> = Arc::default();
         let handler = Arc::new(handler);
-        let (task_rejects, task_requests) = (rejects.clone(), requests.clone());
+        let (task_echo, task_rejects, task_requests) = (echo_subprotocol.clone(), rejects.clone(), requests.clone());
         let task = tokio::spawn(async move {
             let mut index = 0;
             while let Ok((stream, _)) = listener.accept().await {
                 let reject = task_rejects.lock().unwrap().pop_front();
+                let echo = task_echo.load(Ordering::SeqCst);
                 let (requests, handler) = (task_requests.clone(), handler.clone());
                 let this = index;
                 index += 1;
@@ -81,7 +85,7 @@ impl WsServer {
                             *error.status_mut() = StatusCode::from_u16(status).expect("status");
                             return Err(error);
                         }
-                        if let Some(protocol) = request.headers().get("sec-websocket-protocol") {
+                        if let Some(protocol) = request.headers().get("sec-websocket-protocol").filter(|_| echo) {
                             let first = protocol.to_str().unwrap_or_default().split(',').next().unwrap_or_default();
                             response.headers_mut().insert("sec-websocket-protocol", first.trim().parse().unwrap());
                         }
@@ -93,7 +97,12 @@ impl WsServer {
                 });
             }
         });
-        WsServer { port, rejects, requests, task }
+        WsServer { port, echo_subprotocol, rejects, requests, task }
+    }
+
+    /// Upgrade answers no longer echo the client's `Sec-WebSocket-Protocol`.
+    pub fn no_subprotocol_echo(&self) {
+        self.echo_subprotocol.store(false, Ordering::SeqCst);
     }
 
     /// `http://127.0.0.1:<port><path>`: the providers take `http`/`https` URLs, as on Android.

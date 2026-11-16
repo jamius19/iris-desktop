@@ -131,6 +131,18 @@ pub fn custom_provider_saved(state: &mut AppState, id: &str) {
     }
 }
 
+/// A backup was restored (Android `catalogGeneration++`): every list is dropped (reloaded while its provider is
+/// selected), Soniox's reloaded.
+pub fn restored(state: &mut AppState) {
+    let catalogs = &mut state.catalogs;
+    catalogs.gateway.clear();
+    catalogs.openrouter.clear();
+    catalogs.openai.clear();
+    catalogs.custom.clear();
+    catalogs.custom_id = None;
+    state.dictation.providers.soniox_catalog.reload();
+}
+
 /// The automatic loads (Android `SettingsApp`'s effects): the Gateway catalogue while Gateway cleanup or
 /// transcription is on, OpenRouter's while OpenRouter cleanup is, the selected custom provider's while it is selected
 /// with cleanup on, OpenAI's while OpenAI transcription is, Soniox's while Soniox is. A failed load waits for the

@@ -5,8 +5,10 @@
 
 //! Wires dictation together (Android `AppContainer.kt`, Handy's `lib.rs` setup): inputs (global shortcut, other
 //! instances, SIGUSR2, the overlay's ✕) go to the hold-or-toggle coordinator, which starts and stops the dictation
-//! controller; the controller's state drives the overlay, the cancel shortcut and the idle unload; a final transcript
-//! is cleaned up (if enabled) and pasted. Settings reach the worker threads through a `watch` updated on every change.
+//! controller; the controller's state drives the overlay, the tray, the sounds, the cancel shortcut and the idle
+//! unload; a final transcript is cleaned up (if enabled) and pasted. The controller, the on-device provider, the
+//! engine's loads and the cleanup feed [`Statistics`]. Settings reach the worker threads through a `watch` updated on
+//! every change.
 
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
@@ -17,6 +19,7 @@ use iris_core::dictation::DictationState;
 use iris_core::dictation::controller::{Deps, DictationController};
 use iris_core::dictation::coordinator::{Activation, Coordinator};
 use iris_core::dictation::language::detect_language;
+use iris_core::dictation::statistics::Statistics;
 use iris_core::settings::{Settings, default_prompt};
 use iris_core::stt::SpeechToTextProvider;
 use iris_core::stt::local::store::ModelStore;
@@ -27,6 +30,7 @@ use crate::hotkey::{HotkeyEvent, Hotkeys};
 use crate::local::engine::LocalEngine;
 use crate::paste::{self, PasteOptions};
 use crate::providers::Providers;
+use crate::sounds::Sounds;
 use crate::{capture, local};
 
 #[derive(Clone)]
@@ -38,11 +42,19 @@ pub struct Dictation {
     pub engine: LocalEngine,
     pub providers: Providers,
     pub settings: Arc<watch::Sender<Settings>>,
+    pub sounds: Sounds,
+    pub statistics: Statistics,
 }
 
 impl Dictation {
     pub fn new(runtime: &Runtime, settings: Settings) -> Self {
         let settings = Arc::new(watch::channel(settings).0);
+        let speed_settings = settings.clone();
+        let statistics = Statistics::new(
+            crate::project_dirs().config_dir().join("statistics.json"),
+            runtime.handle().clone(),
+            Box::new(move || speed_settings.borrow().stt_speed_percent),
+        );
         // The store waits for the engine to release a model before deleting it; the engine reads models from it.
         let engine_cell: Arc<OnceLock<LocalEngine>> = Arc::new(OnceLock::new());
         let release = engine_cell.clone();
@@ -52,27 +64,34 @@ impl Dictation {
                     engine.unload_model(id);
                 }
             });
-        let engine_settings = settings.clone();
+        let (engine_settings, loads) = (settings.clone(), statistics.clone());
         let engine = LocalEngine::new(
             store.clone(),
             Arc::new(move || {
                 let s = engine_settings.borrow();
                 (s.local_accelerator.clone(), s.on_device_unload_minutes)
             }),
+            Box::new(move |id, ms| loads.record_load(id, ms)),
         );
         let _ = engine_cell.set(engine.clone());
 
-        let selection = settings.clone();
-        let on_device: Arc<dyn SpeechToTextProvider> = Arc::new(engine.provider(move || {
-            let s = selection.borrow();
-            (s.on_device_stt_model.clone(), s.stt_language.clone())
-        }));
+        let (selection, on_device_stats) = (settings.clone(), statistics.clone());
+        let on_device: Arc<dyn SpeechToTextProvider> = Arc::new(engine.provider(
+            move || {
+                let s = selection.borrow();
+                (s.on_device_stt_model.clone(), s.stt_language.clone())
+            },
+            Box::new(move |id, audio_ms, decode_ms, wait_ms| {
+                on_device_stats.record_on_device(id, audio_ms, decode_ms, wait_ms)
+            }),
+        ));
         let providers = Providers::new(runtime.handle(), settings.clone(), on_device);
         let data_dir = crate::project_dirs().data_local_dir().to_path_buf();
         let (audio_settings, session_settings, paste_settings) = (settings.clone(), settings.clone(), settings.clone());
         let (stt_providers, warm_providers, final_providers) =
             (providers.clone(), providers.clone(), providers.clone());
         let warm_runtime = runtime.handle().clone();
+        let (dictation_stats, cleanup_stats) = (statistics.clone(), statistics.clone());
         let controller = DictationController::new(
             runtime.handle().clone(),
             Deps {
@@ -86,14 +105,15 @@ impl Dictation {
                 }),
                 on_final_transcript: Box::new(move |text| {
                     let settings = paste_settings.borrow().clone();
-                    Box::pin(deliver(text, settings, final_providers.clone()))
+                    Box::pin(deliver(text, settings, final_providers.clone(), cleanup_stats.clone()))
                 }),
-                vad_model: Box::new(move || local::vad::scorer(&data_dir)),
+                vad_model: Box::new(move || local::vad::scorer_off_thread(data_dir.clone())),
                 detect_language: Box::new(|text| {
                     Box::pin(
                         async move { tokio::task::spawn_blocking(move || detect_language(&text)).await.ok().flatten() },
                     )
                 }),
+                record: Box::new(move |s, d| dictation_stats.record_dictation(s, d)),
             },
         );
 
@@ -108,7 +128,9 @@ impl Dictation {
             }
             HotkeyEvent::Cancel => cancel_listening(&keys_controller, &keys_coordinator),
         });
-        let dictation = Self { controller, coordinator, hotkeys, store, engine, providers, settings };
+        let sounds = Sounds::start();
+        let dictation =
+            Self { controller, coordinator, hotkeys, store, engine, providers, settings, sounds, statistics };
         runtime.spawn(dictation.clone().follow_state());
         dictation
     }
@@ -119,8 +141,8 @@ impl Dictation {
         cancel_listening(&self.controller, &self.coordinator);
     }
 
-    /// Reacts to every state change: the cancel shortcut while listening, the coordinator's busy window, the idle
-    /// unload, and the overlay (on the main thread).
+    /// Reacts to every state change: the cancel shortcut and the start/stop sounds, the coordinator's busy window, the
+    /// idle unload, and the overlay and tray (on the main thread).
     async fn follow_state(self) {
         let mut states = self.controller.state();
         let mut cancel_registered = false;
@@ -133,6 +155,11 @@ impl Dictation {
                 let binding = listening.then(|| self.settings.borrow().shortcut_cancel.clone());
                 self.hotkeys.set_cancel(binding.as_deref());
                 cancel_registered = listening;
+                // Handy's timing: the start sound on entering Listening, the stop sound on leaving it.
+                let settings = self.settings.borrow();
+                if settings.feedback_sounds {
+                    self.sounds.play(listening, settings.feedback_volume_percent);
+                }
             }
             if matches!(state, DictationState::Done { .. } | DictationState::Error { .. }) {
                 // A press remembered while finalizing may start the next session now.
@@ -140,7 +167,14 @@ impl Dictation {
             }
             self.engine
                 .set_idle(!matches!(state, DictationState::Listening { .. } | DictationState::Finalizing { .. }));
-            let _ = slint::invoke_from_event_loop(move || crate::ui::with_state(|s| s.overlay.update(&state)));
+            let _ = slint::invoke_from_event_loop(move || {
+                crate::ui::with_state(|s| {
+                    s.overlay.update(&state);
+                    if let Some(tray) = &s.tray {
+                        tray.set_state(&state);
+                    }
+                })
+            });
             if states.changed().await.is_err() {
                 break;
             }
@@ -159,13 +193,18 @@ fn cancel_listening(controller: &DictationController, coordinator: &Coordinator)
 /// Android `IrisAccessibilityService.onFinalTranscript`: the optional LLM cleanup, then the paste. A failed or
 /// timed-out cleanup pastes the original transcript, and a failed paste leaves the text on the clipboard, so the
 /// dictation is never lost.
-async fn deliver(transcript: String, settings: Settings, providers: Providers) -> DictationState {
+async fn deliver(
+    transcript: String,
+    settings: Settings,
+    providers: Providers,
+    statistics: Statistics,
+) -> DictationState {
     let mut text = transcript.clone();
     let mut cleanup_error = None;
     let mut cleanup_timed_out = false;
     if settings.cleanup_enabled {
         let started = std::time::Instant::now();
-        match cleanup(transcript, &settings, &providers).await {
+        match cleanup(transcript, &settings, &providers, &statistics).await {
             Some(Ok(cleaned)) => text = cleaned,
             Some(Err(e)) => cleanup_error = Some(e),
             None => {
@@ -196,12 +235,20 @@ async fn deliver(transcript: String, settings: Settings, providers: Providers) -
             })
         }
     };
+    if paste_notice.as_deref().is_some_and(paste::is_not_copied) {
+        crate::ui::recovery::keep(text.clone());
+    }
     let notice = done_notice(cleanup_error, cleanup_timed_out, paste_notice);
     DictationState::Done { text, notice }
 }
 
 /// The cleaned text, a user-readable failure, or None on timeout (Android `timedCleanup`).
-async fn cleanup(text: String, settings: &Settings, providers: &Providers) -> Option<Result<String, String>> {
+async fn cleanup(
+    text: String,
+    settings: &Settings,
+    providers: &Providers,
+    statistics: &Statistics,
+) -> Option<Result<String, String>> {
     // Validated when saved; a stored value that no longer parses fails like any other unexpected error.
     let Ok(provider_options) = parse_provider_options(settings.active_cleanup_provider_options()) else {
         return Some(Err("Cleanup failed".into()));
@@ -216,8 +263,8 @@ async fn cleanup(text: String, settings: &Settings, providers: &Providers) -> Op
     };
     let provider = providers.cleanup(settings);
     let timeout = Duration::from_secs(settings.cleanup_timeout_seconds.max(0) as u64);
-    // Statistics (M4) record the duration here.
-    let result = timed_cleanup(timeout, |_| {}, provider.cleanup(request)).await?;
+    let record = |took: Duration| statistics.record_cleanup(settings, took.as_millis() as i64);
+    let result = timed_cleanup(timeout, record, provider.cleanup(request)).await?;
     Some(result.map_err(|e| e.0))
 }
 

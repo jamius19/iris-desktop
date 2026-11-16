@@ -43,8 +43,9 @@ pub fn transcribe_file(path: &Path, model_id: Option<&str>) -> i32 {
         std::thread::sleep(Duration::from_millis(20));
     }
     let accelerator = settings.local_accelerator.clone();
-    let engine = LocalEngine::new(store, Arc::new(move || (accelerator.clone(), -1)));
-    let provider = engine.provider(|| (String::new(), String::new()));
+    // No statistics for a file.
+    let engine = LocalEngine::new(store, Arc::new(move || (accelerator.clone(), -1)), Box::new(|_, _| {}));
+    let provider = engine.provider(|| (String::new(), String::new()), Box::new(|_, _, _, _| {}));
     let request = SttRequest {
         model: model.id.into(),
         language: settings.stt_language.clone(),

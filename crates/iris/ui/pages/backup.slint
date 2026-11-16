@@ -1,0 +1,115 @@
+/*
+* Author: Jamius Siam
+* Since: 16/11/2026
+*/
+
+// Android `ui/settings/BackupPage.kt`: Backup and Restore, each with its own password. Create Backup writes an
+// encrypted file; Restore picks a file, then Restore Backup replaces all settings and API keys with its. The file
+// dialogs and the work run in Rust (`src/ui/backup.rs`).
+
+import { Theme, Type } from "../theme.slint";
+import { Backup } from "../globals.slint";
+import { Label, Section } from "../components/basics.slint";
+import { SmallButton } from "../components/buttons.slint";
+import { FieldGroup } from "../components/rows.slint";
+import { DraftPasswordField } from "../components/fields.slint";
+import { PageScaffold } from "../components/page.slint";
+
+// A SmallButton with its outcome (success or failure colour) below.
+component ActionButton inherits VerticalLayout {
+    in property <string> text;
+    in property <bool> enabled;
+    in property <string> outcome;
+    in property <bool> outcome-error;
+    callback clicked();
+    spacing: 8px;
+    HorizontalLayout {
+        alignment: start;
+        SmallButton {
+            text: root.text;
+            enabled: root.enabled;
+            clicked => { root.clicked(); }
+        }
+    }
+    if root.outcome != "": Label {
+        text: root.outcome;
+        style: Type.helper;
+        color: root.outcome-error ? Theme.failure : Theme.enabled;
+    }
+}
+
+export component BackupPage inherits PageScaffold {
+    title: "Backup and Restore";
+
+    Section {
+        title: "Backup";
+        Label {
+            text: "Saves all settings, prompts, custom providers and API keys to an encrypted file. Statistics and "
+                + "downloaded models aren't included.";
+            style: Type.subtitle;
+            color: Theme.muted;
+        }
+        DraftPasswordField {
+            label: "Password";
+            text <=> Backup.backup-password;
+            placeholder: "Enter a password";
+            helper: "Needed to restore the backup and can't be recovered. Anyone with the file and the password can "
+                + "read your API keys.";
+            error: Backup.backup-password-error;
+            edited => { Backup.backup-password-error = ""; }
+        }
+        ActionButton {
+            text: Backup.running == "backup" ? "Creating…" : "Create Backup";
+            enabled: Backup.running == "" && Backup.backup-password != "";
+            outcome: Backup.outcome-action == "backup" ? Backup.outcome-text : "";
+            outcome-error: Backup.outcome-error;
+            clicked => { Backup.create-backup(); }
+        }
+    }
+    Section {
+        title: "Restore";
+        Label {
+            text: "Replaces all settings, prompts, custom providers and API keys with the backup's. Anything not in "
+                + "the backup is removed. Statistics and downloaded models are kept, so download the restored "
+                + "on-device model if it's missing.";
+            style: Type.subtitle;
+            color: Theme.muted;
+        }
+        if Backup.picked-name == "": ActionButton {
+            text: "Choose Backup File";
+            enabled: Backup.running == "";
+            outcome: Backup.outcome-action == "restore" ? Backup.outcome-text : "";
+            outcome-error: Backup.outcome-error;
+            clicked => { Backup.choose-file(); }
+        }
+        if Backup.picked-name != "": FieldGroup {
+            label: "Selected File";
+            Label {
+                text: Backup.picked-name;
+                style: Type.subtitle;
+                color: Theme.muted;
+            }
+        }
+        if Backup.picked-name != "": HorizontalLayout {
+            alignment: start;
+            SmallButton {
+                text: "Choose Another File";
+                enabled: Backup.running == "";
+                clicked => { Backup.choose-file(); }
+            }
+        }
+        if Backup.picked-name != "": DraftPasswordField {
+            label: "Password";
+            text <=> Backup.restore-password;
+            placeholder: "Enter the backup's password";
+            helper: "The password the backup was created with.";
+        }
+        if Backup.picked-name != "": ActionButton {
+            text: Backup.running == "restore" ? "Restoring…" : "Restore Backup";
+            enabled: Backup.running == "" && Backup.restore-password != "";
+            outcome: Backup.outcome-action == "restore" ? Backup.outcome-text : "";
+            outcome-error: Backup.outcome-error;
+            clicked => { Backup.restore(); }
+        }
+    }
+}

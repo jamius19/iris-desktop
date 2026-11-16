@@ -16,9 +16,9 @@ use tokio::time::Instant;
 
 use super::protocol::{
     GATEWAY_WARM_UP_URL, PROTOCOL_VERSION, SPECIFICATION_VERSION, TRANSCRIPTION_URL, gateway_network_error_message,
-    http_error_message, is_header_value, parse_upload_response, provider_options, upload_body,
+    http_error_message, parse_upload_response, provider_options, upload_body,
 };
-use crate::net::{self, KeySource, NetError, WarmUp};
+use crate::net::{self, KeySource, NetError, WarmUp, is_header_value};
 use crate::stt::wav::{pcm16_duration, upload_read_timeout, wav_bytes};
 use crate::stt::{AudioSource, BoxFuture, OnPartial, SpeechToTextProvider, SttError, SttRequest};
 

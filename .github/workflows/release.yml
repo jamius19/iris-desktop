@@ -1,0 +1,215 @@
+# Author: Jamius Siam
+# Since: 16/11/2026
+#
+# Every push to main: run iris-core's tests and build the Windows installer (NSIS) and the Linux .deb and AppImage
+# (scripts/package.{ps1,sh}), uploaded as workflow artifacts. With the repository variable IRIS_ENGINE_TESTS set to
+# `true`, also run the ignored engine and VAD tests against a real model. If tag v<version> (crates/iris/Cargo.toml)
+# doesn't exist yet, create it on the pushed commit with a GitHub Release carrying the three packages.
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  core-tests:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Pinned (the version the tests ran with); bump on purpose.
+      - name: Install Rust
+        run: |
+          rustup toolchain install 1.99 --profile minimal --no-self-update
+          rustup default 1.99
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      - name: Test iris-core
+        run: cargo test -p iris-core
+
+      - name: Read the version
+        id: version
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "iris").version')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install 1.99 --profile minimal --no-self-update
+          rustup default 1.99
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      - uses: humbletim/install-vulkan-sdk@30ba978f977e81b72d091fc8888feb1fb26f9aff # v1.2
+        with:
+          version: 1.4.309.0
+          cache: true
+
+      # From Handy: ggml-vulkan needs SPIRV-HeadersConfig.cmake, which the CI Vulkan SDK doesn't provide.
+      - name: Install SPIRV-Headers
+        run: |
+          vcpkg install spirv-headers:x64-windows
+          if ($LASTEXITCODE -ne 0) { throw "vcpkg install spirv-headers failed" }
+          $prefix = "$env:VCPKG_INSTALLATION_ROOT/installed/x64-windows" -replace '\\','/'
+          Add-Content $env:GITHUB_ENV "CMAKE_PREFIX_PATH=$prefix"
+
+      - name: Install cargo-packager
+        run: cargo install cargo-packager@0.11.8 --locked
+
+      - name: Package
+        run: ./scripts/package.ps1
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows
+          path: target/release/iris_*_x64-setup.exe
+          if-no-files-found: error
+
+  linux:
+    # The oldest supported runner: the packages need its glibc or newer.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The Vulkan SDK comes from LunarG, as in Handy's 22.04 build (jammy's own packages are older than the 24.04
+      # ones the dev builds use).
+      - name: Install build dependencies
+        run: |
+          wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc \
+            | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc > /dev/null
+          sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-1.3.290-jammy.list \
+            https://packages.lunarg.com/vulkan/1.3.290/lunarg-vulkan-1.3.290-jammy.list
+          sudo apt-get update
+          sudo apt-get install -y vulkan-sdk cmake clang libasound2-dev libfontconfig1-dev libwayland-dev \
+            libx11-dev libxkbcommon-dev
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install 1.99 --profile minimal --no-self-update
+          rustup default 1.99
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      - name: Install cargo-deb and cargo-packager
+        run: cargo install cargo-deb@3.8.0 cargo-packager@0.11.8 --locked
+
+      - name: Package
+        run: bash scripts/package.sh
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linux
+          path: |
+            target/debian/iris_*_amd64.deb
+            target/release/iris_*_x86_64.AppImage
+          if-no-files-found: error
+
+  # The ignored tests in crates/iris (engine supervisor, Silero VAD) against Nemotron, the streaming default model, and
+  # a synthetic speech clip. The runner has no GPU, so the five tests that need one are skipped.
+  engine-tests:
+    if: vars.IRIS_ENGINE_TESTS == 'true'
+    runs-on: ubuntu-22.04
+    env:
+      # Pinned as in crates/iris-core/src/stt/local/models.rs.
+      MODEL_REPO: handy-computer/nemotron-speech-streaming-en-0.6b-gguf
+      MODEL_REVISION: 7d9b719206789e4068d87c6398262ab4dfd4e45d
+      MODEL_FILE: nemotron-speech-streaming-en-0.6b-Q8_0.gguf
+      MODEL_SHA256: 90d8c89714cd31efc88be62a40c6b2bea57e0cc2063af1ffe2c28f1a228ca110
+      # The worker must be a debug build (fault injection), but an unoptimised ggml is too slow for the deadlines.
+      FAST_GGML: --config profile.dev.package.transcribe-cpp-sys.opt-level=3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install build dependencies
+        run: |
+          wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc \
+            | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc > /dev/null
+          sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-1.3.290-jammy.list \
+            https://packages.lunarg.com/vulkan/1.3.290/lunarg-vulkan-1.3.290-jammy.list
+          sudo apt-get update
+          sudo apt-get install -y vulkan-sdk cmake clang libasound2-dev libfontconfig1-dev libwayland-dev \
+            libx11-dev libxkbcommon-dev espeak-ng sox
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install 1.99 --profile minimal --no-self-update
+          rustup default 1.99
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/iris-test-model
+          key: model-${{ env.MODEL_SHA256 }}
+
+      - name: Get the model
+        run: |
+          model="$HOME/iris-test-model/$MODEL_FILE"
+          if [ ! -f "$model" ]; then
+            mkdir -p "$HOME/iris-test-model"
+            curl -fL --retry 3 -o "$model" "https://huggingface.co/$MODEL_REPO/resolve/$MODEL_REVISION/$MODEL_FILE"
+          fi
+          echo "$MODEL_SHA256  $model" | sha256sum -c -
+          echo "IRIS_TEST_MODEL=$model" >> "$GITHUB_ENV"
+
+      - name: Make a 16 kHz mono test clip
+        run: |
+          espeak-ng -w "$RUNNER_TEMP/speech.wav" "Iris turns what you say into text, right on this computer."
+          sox "$RUNNER_TEMP/speech.wav" -r 16000 -c 1 -b 16 "$RUNNER_TEMP/test.wav"
+          echo "IRIS_TEST_WAV=$RUNNER_TEMP/test.wav" >> "$GITHUB_ENV"
+
+      - name: Run the engine and VAD tests
+        run: |
+          cargo build -p iris $FAST_GGML
+          IRIS_TRANSCRIBE_WORKER_EXE="$PWD/target/debug/iris" cargo test -p iris $FAST_GGML -- --ignored \
+            --test-threads=1 --skip gpu_only_crash_recovers_on_cpu --skip one_off_gpu_backend_error_retries_on_gpu \
+            --skip persistent_gpu_backend_error_recovers_on_cpu --skip gpu_backend_init_crash_uses_cpu_only_worker \
+            --skip pinned_device_fails_loudly
+
+  release:
+    needs: [core-tests, windows, linux, engine-tests]
+    # Also when engine-tests was skipped (variable unset); never after a failure.
+    if: ${{ !cancelled() && !failure() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Release a new version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.core-tests.outputs.version }}
+        run: |
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$VERSION" --silent 2>/dev/null; then
+            echo "v$VERSION is already released"
+          else
+            gh release create "v$VERSION" dist/* --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" --title "Iris $VERSION"
+          fi

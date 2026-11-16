@@ -10,6 +10,9 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+hound.workspace = true
 ico = "0.6"
 image = { version = "0.25", default-features = false, features = ["png"] }
+resvg = { version = "~0.48", default-features = false }
+serde_json.workspace = true
 ureq = "3"

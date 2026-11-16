@@ -353,6 +353,21 @@ export component DraftApiKeyField inherits FieldGroup {
     }
 }
 
+// A password draft (never saved, never seeded): masked with an eye toggle, no trash.
+export component DraftPasswordField inherits FieldGroup {
+    in property <string> placeholder;
+    in-out property <string> text <=> shell.text;
+    callback edited();
+
+    changed text => { self.edited(); }
+
+    shell := SecureKeyShell {
+        field-label: root.label;
+        placeholder: root.placeholder;
+        has-error: root.error != "";
+    }
+}
+
 // A single-line field that only edits a form draft (saved elsewhere): a trash clears it. Enter runs `done`. An
 // optional bordered action button (e.g. "+") sits beside the field.
 export component DraftTextField inherits FieldGroup {

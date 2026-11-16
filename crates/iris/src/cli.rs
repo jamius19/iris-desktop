@@ -12,7 +12,7 @@ use clap::Parser;
 #[derive(Parser, Debug, Clone, Default)]
 #[command(name = "iris", about = "Iris - voice dictation", version)]
 pub struct CliArgs {
-    /// Start with the main window hidden (needs the tray, M4; shown until then)
+    /// Start with the main window hidden (in the tray; shown without one)
     #[arg(long)]
     pub start_hidden: bool,
 
@@ -53,6 +53,19 @@ impl CliArgs {
             "show"
         }
     }
+}
+
+/// Windows release builds have no console of their own (`windows_subsystem = "windows"`): this attaches to the
+/// terminal that started Iris, so `-f`, `--help`, `--version` and argument errors print there. Known quirk: the shell
+/// doesn't wait for a GUI program, so its prompt comes back before the output (press Enter for a clean prompt).
+/// Redirected output already has its handles and is unaffected; without a parent console (or in a debug build, which
+/// has one) the call fails harmlessly. Nothing to do elsewhere.
+pub fn attach_console() {
+    #[cfg(windows)]
+    // SAFETY: no preconditions.
+    let _ = unsafe {
+        windows::Win32::System::Console::AttachConsole(windows::Win32::System::Console::ATTACH_PARENT_PROCESS)
+    };
 }
 
 #[cfg(test)]

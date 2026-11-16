@@ -506,7 +506,12 @@ pub fn to_settings(values: &Values, stored_secrets: &HashSet<String>) -> Result<
         open_router_key_set: stored_secrets.contains(secrets::OPENROUTER_API_KEY),
         custom_cleanup_providers: custom_providers,
         custom_cleanup_key_ids,
-        bubble_side: string_or(values, keys::BUBBLE_SIDE, DEFAULT_BUBBLE_SIDE)?,
+        // Android's `BubbleSide.valueOf` throws on anything else.
+        bubble_side: match string(values, keys::BUBBLE_SIDE)? {
+            Some(side @ ("LEFT" | "RIGHT")) => side.to_string(),
+            Some(_) => return Err(format!("Invalid {}", keys::BUBBLE_SIDE)),
+            None => DEFAULT_BUBBLE_SIDE.to_string(),
+        },
         bubble_y_fraction: float(values, keys::BUBBLE_Y_FRACTION)?.unwrap_or(DEFAULT_BUBBLE_Y_FRACTION),
         panel_lines: int(values, keys::PANEL_LINES)?.unwrap_or(DEFAULT_PANEL_LINES),
         panel_width_percent: int(values, keys::PANEL_WIDTH_PERCENT)?.unwrap_or(DEFAULT_PANEL_WIDTH_PERCENT),
@@ -1063,6 +1068,11 @@ mod tests {
     #[test]
     fn wrongly_typed_known_key_is_an_error() {
         assert!(to_settings(&prefs([(keys::PANEL_LINES, s("3"))]), &HashSet::new()).is_err());
+    }
+
+    #[test]
+    fn invalid_bubble_side_is_an_error() {
+        assert!(to_settings(&prefs([(keys::BUBBLE_SIDE, s("TOP"))]), &HashSet::new()).is_err());
     }
 
     #[test]

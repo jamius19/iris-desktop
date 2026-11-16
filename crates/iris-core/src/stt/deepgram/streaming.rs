@@ -52,8 +52,8 @@ pub struct DeepgramSpeechToText {
 }
 
 impl DeepgramSpeechToText {
-    /// `_client` is unused: the WebSocket opens its own connection, so there's no warm-up to share it with.
-    pub fn new(_client: reqwest::Client, api_key: KeySource) -> Self {
+    /// The WebSocket opens its own connection (no warm-up to share), so no HTTP client.
+    pub fn new(api_key: KeySource) -> Self {
         Self::with_url(api_key, LISTEN_URL.into(), net::PING_INTERVAL)
     }
 
@@ -312,6 +312,7 @@ fn connect_error(error: WsConnectError) -> SttError {
             deepgram_http_error_message(status, &body, headers.get("dg-error").and_then(|v| v.to_str().ok()))
         }
         WsConnectError::InvalidHeader(_) => INVALID_KEY.into(),
+        WsConnectError::NoSubProtocol => unreachable!("no subprotocol is asked for"),
         WsConnectError::Network(error) => deepgram_network_error_message(&error),
     })
 }

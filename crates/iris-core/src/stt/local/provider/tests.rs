@@ -172,6 +172,8 @@ struct Seen {
     partials: Shared<Vec<String>>,
     streams: Arc<AtomicUsize>,
     cancels: Arc<AtomicUsize>,
+    /// `record` calls: model id, audio ms, decode ms (the wait isn't checked, as on Android).
+    records: Shared<Vec<(String, i64, i64)>>,
 }
 
 impl Seen {
@@ -186,17 +188,26 @@ impl Seen {
             decode: Arc::new(move |_, language, samples| {
                 decoded.lock().unwrap().push(samples.clone());
                 languages.lock().unwrap().push(language);
-                reply(samples)
+                let reply = reply(samples);
+                Box::pin(async move { reply.await.map(|text| Decoded { text, busy_ms: 10 }) })
             }),
+            // Cumulative busy time: 10 ms per emission.
             stream: Box::new(move |_, chunks| {
                 streams.fetch_add(1, Ordering::SeqCst);
                 let (results, taken) = mpsc::unbounded_channel();
-                let abandoned = results.clone();
-                let body = stream(chunks, results);
+                let (texts, mut sent) = mpsc::unbounded_channel();
+                let body = stream(chunks, texts);
                 tokio::spawn(async move {
+                    let forward = async {
+                        let mut busy_ms = 0;
+                        while let Some(text) = sent.recv().await {
+                            busy_ms += 10;
+                            let _ = results.send(text.map(|text| Decoded { text, busy_ms }));
+                        }
+                    };
                     tokio::select! {
-                        _ = body => {}
-                        _ = abandoned.closed() => {}
+                        _ = async { tokio::join!(body, forward) } => {}
+                        _ = results.closed() => {}
                     }
                 });
                 taken
@@ -209,6 +220,12 @@ impl Seen {
                 })
             },
             max_segment_bytes,
+            record: {
+                let records = self.records.clone();
+                Box::new(move |id, audio_ms, decode_ms, _wait_ms| {
+                    records.lock().unwrap().push((id.to_string(), audio_ms, decode_ms))
+                })
+            },
         }
     }
 
@@ -249,6 +266,10 @@ impl Seen {
 
     fn partials(&self) -> Vec<String> {
         self.partials.lock().unwrap().clone()
+    }
+
+    fn records(&self) -> Vec<(String, i64, i64)> {
+        self.records.lock().unwrap().clone()
     }
 }
 
@@ -355,6 +376,7 @@ async fn a_hung_decode_times_out_after_the_deadline() {
     assert_eq!(err("On-device transcription timed out"), result);
     // 60 s plus twice the pending audio.
     assert_eq!(Duration::from_secs(62), start.elapsed());
+    assert!(seen.records().is_empty());
 }
 
 #[tokio::test(start_paused = true)]
@@ -516,6 +538,7 @@ async fn a_hung_stream_times_out_after_the_deadline() {
     assert_eq!(err("On-device transcription timed out"), result);
     // 60 s plus twice the pending audio.
     assert_eq!(Duration::from_secs(62), start.elapsed());
+    assert!(seen.records().is_empty());
 }
 
 #[tokio::test(start_paused = true)]
@@ -535,6 +558,7 @@ async fn the_streaming_deadline_counts_only_undecoded_audio() {
 
     assert_eq!(err("On-device transcription timed out"), result);
     assert_eq!(Duration::from_secs(62), start.elapsed());
+    assert!(seen.records().is_empty());
 }
 
 #[tokio::test(start_paused = true)]
@@ -571,4 +595,87 @@ async fn no_speech_from_the_audio_cancels_the_stream() {
     assert_eq!(err("No speech detected"), result);
     assert!(cancelled.load(Ordering::SeqCst));
     assert_eq!(Duration::ZERO, start.elapsed());
+}
+
+#[tokio::test(start_paused = true)]
+async fn no_speech_is_not_recorded() {
+    let seen = Seen::default();
+    // Text was decoded before the audio failed (the VAD's "No speech detected" from the controller): the yield lets
+    // the segment decode, or the stream take the chunk and send its text.
+    let offline = vec![Step::Chunk(chunk(10)), Step::Chunk(end()), Step::Yield, Step::Fail("No speech detected")];
+    let streamed = vec![Step::Chunk(chunk(10)), Step::Yield, Step::Fail("No speech detected")];
+
+    let per_phrase = seen.provider(Options { decode: replies(&["Hello."]), ..Options::default() });
+    assert_eq!(err("No speech detected"), seen.run(&per_phrase, offline).await);
+    let stream = stream_texts(&["a"], "a.", Shared::default());
+    let streaming = seen.provider(Options { stream, ..Options::default() });
+    assert_eq!(err("No speech detected"), seen.run_with(&streaming, streamed, NEMOTRON, "").await);
+
+    // Both had text, still nothing recorded.
+    assert_eq!(vec!["Hello.", "a"], seen.partials());
+    assert!(seen.records().is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_dictation_with_text_is_recorded_once() {
+    let seen = Seen::default();
+    let stt = seen.provider(Options { decode: replies(&["Hello.", "Bye."]), ..Options::default() });
+
+    // 16,000 + 8,000 samples = 48,000 bytes = 1.5 s.
+    seen.run(&stt, chunks(vec![chunk(16_000), end(), chunk(8_000)])).await.unwrap();
+
+    assert_eq!(vec![(PER_PHRASE.to_string(), 1_500, 20)], seen.records());
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_streamed_dictation_records_the_last_busy_time() {
+    let seen = Seen::default();
+    let stt =
+        seen.provider(Options { stream: stream_texts(&["a", "a b"], "a b.", Shared::default()), ..Options::default() });
+
+    seen.run_with(&stt, chunks(vec![chunk(16_000), end(), chunk(16_000)]), NEMOTRON, "").await.unwrap();
+
+    // Three emissions: the last one's cumulative 30 ms, not the sum.
+    assert_eq!(vec![(NEMOTRON.to_string(), 2_000, 30)], seen.records());
+}
+
+#[tokio::test(start_paused = true)]
+async fn blank_text_is_not_recorded() {
+    let seen = Seen::default();
+    let per_phrase = seen.provider(Options { decode: replies(&[" "]), ..Options::default() });
+    seen.run(&per_phrase, chunks(vec![chunk(10)])).await.unwrap();
+    let streaming =
+        seen.provider(Options { stream: stream_texts(&[" "], "", Shared::default()), ..Options::default() });
+    seen.run_with(&streaming, chunks(vec![chunk(10)]), NEMOTRON, "").await.unwrap();
+
+    assert!(seen.records().is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn failures_are_not_recorded() {
+    let seen = Seen::default();
+    let failing = seen.provider(Options { decode: failing("On-device transcription failed"), ..Options::default() });
+    assert_eq!(err("On-device transcription failed"), seen.run(&failing, chunks(vec![chunk(10)])).await);
+    let missing = seen.provider(Options { downloaded: false, ..Options::default() });
+    assert_eq!(
+        err("Download the Parakeet TDT v3 model in Iris settings"),
+        seen.run(&missing, chunks(vec![chunk(10)])).await
+    );
+
+    assert!(seen.records().is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_cancelled_dictation_is_not_recorded() {
+    let seen = Seen::default();
+    let session = seen.launch(
+        seen.provider(Options { decode: hung(), ..Options::default() }),
+        chunks(vec![chunk(10)]),
+        PER_PHRASE,
+    );
+    run_current().await;
+    session.abort();
+    run_current().await;
+
+    assert!(seen.records().is_empty());
 }

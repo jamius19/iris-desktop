@@ -284,7 +284,7 @@ fn endless() -> Audio {
 fn stt_with(url: &str, api_key: Option<&str>, reconnect_timeout: Duration) -> VercelGatewaySpeechToText {
     let key = api_key.map(str::to_string);
     let api_key: KeySource = Arc::new(move || Ok(key.clone()));
-    VercelGatewaySpeechToText::with_urls(api_key, url, reconnect_timeout, Duration::from_millis(50))
+    VercelGatewaySpeechToText::with_urls(api_key, url, reconnect_timeout, Duration::from_millis(50), net::PING_INTERVAL)
 }
 
 fn stt(url: &str) -> VercelGatewaySpeechToText {
@@ -506,6 +506,17 @@ async fn unknown_model_shows_the_gateway_message_and_is_not_retried() {
 }
 
 #[tokio::test]
+async fn handshake_without_the_subprotocol_echo_is_not_retried() {
+    let gateway = Gateway::start(vec![]).await;
+    gateway.server.no_subprotocol_echo();
+
+    let error = run(&stt(&gateway.url()), endless()).await;
+
+    assert_eq!(Err(SttError("AI Gateway handshake failed (subprotocol)".into())), error);
+    assert_eq!(1, gateway.request_count());
+}
+
+#[tokio::test]
 async fn times_out_when_the_server_stalls_again_after_the_reconnect() {
     let gateway = Gateway::start(vec![Script::Silent, Script::Silent]).await;
 
@@ -565,4 +576,30 @@ async fn model_id_that_cant_be_a_header_fails_without_connecting() {
 
     assert_eq!(Err(SttError("Invalid model id: openai/gpt-ü".into())), error);
     assert_eq!(0, gateway.request_count());
+}
+
+// Desktop: pings are sent by the socket (OkHttp's pingInterval).
+
+#[tokio::test]
+async fn missed_pong_reconnects_once_then_fails_the_session() {
+    // Never reads, so never answers a ping.
+    let server = WsServer::start(|_request, socket| async move {
+        sleep(Duration::from_secs(10)).await;
+        drop(socket);
+    })
+    .await;
+    let api_key: KeySource = Arc::new(|| Ok(Some("vck-test".into())));
+    let url = server.url("/v4/ai/transcription-model");
+    let stt = VercelGatewaySpeechToText::with_urls(
+        api_key,
+        &url,
+        Duration::from_millis(5_000),
+        Duration::from_millis(50),
+        Duration::from_millis(100),
+    );
+
+    let error = run(&stt, endless()).await;
+
+    assert_eq!(Err(SttError(gateway_network_error_message(&NetError::ping_timeout()))), error);
+    assert_eq!(2, server.requests().len());
 }

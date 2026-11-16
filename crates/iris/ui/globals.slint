@@ -268,6 +268,11 @@ export global Services {
     in property <string> text-input-helper;
     in property <bool> shortcut-registered;
     in property <string> shortcut-helper;
+    // The last transcript that could be neither pasted nor copied ("" = none), kept in memory only; its card's error.
+    in property <string> lost-transcript;
+    in property <string> lost-transcript-error;
+    callback copy-lost-transcript();
+    callback dismiss-lost-transcript();
     callback microphone-setup();
     callback text-input-setup();
     callback shortcut-setup();
@@ -279,10 +284,71 @@ export global Copy {
     pure callback api-key-helper(is-set: bool, shared-with: string) -> string;
 }
 
+// The update check's result, shown after the version in the footer (`unknown`: the check failed, nothing shown).
+export enum UpdateState { checking, up-to-date, available, unknown }
+
 export global App {
     in property <string> version;
     in property <[Licence]> licences;
+    // The generated Rust libraries text by line (one Text of 0.9 MB is far too slow to lay out).
+    in property <[string]> rust-licences;
+    in property <UpdateState> update;
+    // Runs the update check again (the footer's "Up to date").
+    callback recheck-update();
+    // Opens the latest release page (the footer's "Update available").
+    callback open-release-page();
     callback open-url(url: string);
     // The colour scheme changed (the overlay follows it).
     callback dark-changed(dark: bool);
+}
+
+// A Statistics value's colour.
+export enum Tone { text, enabled, warning, failure }
+
+export struct StatRow {
+    title: string,
+    value: string,
+    tone: Tone,
+    subtitle: string,
+}
+
+// One section of the Statistics page: an on-device model, a cloud provider + model or a cleanup provider + model, with
+// how many samples its rows come from.
+export struct StatSection {
+    title: string,
+    rows: [StatRow],
+    basis: string,
+}
+
+// The Statistics page (Android `StatisticsPage.kt`), refilled whenever the statistics change.
+export global Stats {
+    in property <bool> empty;
+    in property <bool> has-totals;
+    in property <string> time-transcribed;
+    in property <string> time-saved;
+    // On-device models, then cloud, then cleanup.
+    in property <[StatSection]> sections;
+    in property <bool> has-models;
+    in property <bool> has-cloud;
+    in property <bool> has-cleanup;
+    callback reset();
+}
+
+// The Backup and Restore page (Android `BackupPage.kt`). The passwords are cleared after a successful operation and
+// when the page is left; `running` is "backup" or "restore" while one runs.
+export global Backup {
+    in-out property <string> backup-password;
+    in-out property <string> backup-password-error;
+    in-out property <string> restore-password;
+    in property <string> running;
+    // The picked backup file's name, "" while none is picked.
+    in property <string> picked-name;
+    // The last operation ("backup" or "restore") and its outcome, shown under its button.
+    in property <string> outcome-action;
+    in property <string> outcome-text;
+    in property <bool> outcome-error;
+    callback create-backup();
+    callback choose-file();
+    callback restore();
+    callback left();
 }

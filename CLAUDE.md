@@ -2,13 +2,15 @@
 
 Rust + Slint voice dictation app for Windows 10+ and Linux, recreating the Android app Iris (the Iris Android repo)
 with desktop mechanisms from Handy (the Handy repo, MIT).
-`PLAN.md` is the plan (milestones M1–M4); `docs/decisions.md` holds decisions and spike results.
+`README.md` is the user guide (incl. Linux setup); `docs/architecture.md` the structure (threads, IPC, storage,
+backup format, models); `docs/decisions.md` decisions, spike results, known limitations and future work;
+`docs/manual-checks.md` what only a person can check; `docs/third-party.md` and `docs/providers.md` provenance.
 
-Status: M1 (shell, design system, settings pages, persistence), M2 (local dictation: engine worker, model
-downloads, capture, VAD gate, controller, hotkeys, overlay, paste, CLI) and M3 (cloud speech-to-text: OpenAI, Vercel AI
-Gateway, Deepgram, Soniox; LLM cleanup: Gateway, OpenRouter, custom OpenAI-compatible; model menus) implemented. Cloud
-providers are tested against local mock servers only (no API keys on the dev machine). `cargo deny check licenses`
-not yet run (cargo-deny not installed). M4 not started.
+Status: all milestones implemented (M1 shell and settings pages, M2 local dictation, M3 cloud speech-to-text and LLM
+cleanup, M4 statistics, backup and restore, tray, launch at startup, sounds, update check, packaging). Cloud
+providers are tested against local mock servers only (no API keys on the dev machine). Packages and the release
+workflow are written but have not been built or run (no packaging tools installed); `cargo deny check licenses` not
+run (cargo-deny not installed).
 
 ## Commands (Git Bash, repo root)
 ```
@@ -22,6 +24,11 @@ cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo deny check licenses                  # needs cargo-deny (not installed on the dev machine yet)
 cargo xtask assets                         # regenerate assets/icons/{lucide,brand,app}; outputs are committed
+cargo xtask tray                           # regenerate assets/icons/tray (committed)
+cargo xtask sounds                         # regenerate assets/sounds/{start,stop}.wav (committed)
+cargo xtask licenses                       # regenerate assets/licenses/THIRD_PARTY_LICENSES.txt
+pwsh scripts/package.ps1                   # NSIS installer (needs cargo-packager)
+bash scripts/package.sh                    # .deb + AppImage on Linux (needs cargo-deb, cargo-packager)
 ```
 Linux check from Windows: WSL `Ubuntu` with `CARGO_TARGET_DIR=$HOME/.cache/iris-desktop-target cargo build
 --workspace` and `cargo test --workspace` (WSL has no clippy component; no layer-shell, no `/dev/input`).
@@ -31,7 +38,9 @@ cargo test -p iris -- --ignored --test-threads=1`.
 
 ## Layout
 - `crates/iris-core`: UI-free logic and its tests. `settings/` (model = Android `Settings.kt` + `toSettings`,
-  store = typed JSON file in Android's backup encoding, secrets = keyring), `copy.rs` (Android `SettingsText.kt`,
+  store = typed JSON file in Android's backup encoding, secrets = keyring, `backup.rs` = the `.irisbackup` format
+  and restore order, with the Android-made fixture `backup/android.irisbackup`), `update_check.rs` (GitHub latest
+  release), `copy.rs` (Android `SettingsText.kt`,
   desktop wording), `ui_math.rs` (dropdown placement, slider math, autosave commit), `net.rs` (the providers' HTTP
   client, size-capped reads, WebSocket connect, keychain key reads, warm-up throttle; `net/test_support.rs`: the local
   WebSocket test server), `cleanup/` (`CleanupProvider`, timed cleanup, glossary; `protocol.rs` Chat Completions body,
@@ -40,27 +49,31 @@ cargo test -p iris -- --ignored --test-threads=1`.
   + upload (+ Soniox catalogue/models); `local/`: model table, download store + transport, on-device provider with the
   engine injected, idle rule), `audio/` (speech gate, resample, Sonic time-stretch from
   `vendor/sonic`, visualizer), `dictation/` (state, controller, Handy's coordinator, filler words, language, custom
-  words).
-- `crates/iris`: the binary. `ui/*.slint` (design system in `ui/theme.slint`, `ui/components/`, pages in
-  `ui/pages/`, globals in `ui/globals.slint`), `src/ui/*.rs` (glue: fills `Prefs` from settings, dispatches setters by
-  settings key; `shortcuts.rs` for the Shortcut section and Global Shortcut row; `catalogs.rs` the model menus),
-  `src/services.rs` (Home checks), `src/favicons.rs`, `src/providers.rs` (Android `AppContainer`: every provider,
-  and the one the settings select), `src/dictation.rs` (wires controller, coordinator, hotkeys, cleanup, paste,
-  overlay), `src/local/`
-  (Handy's `engine_supervisor` verbatim in `supervisor/`, `engine.rs`, Silero `vad.rs`), `src/capture.rs`,
-  `src/hotkey.rs`, `src/paste/`, `src/overlay/` (host; Windows window / Linux helper client), `src/cli.rs`,
-  `src/single_instance.rs`, `src/signals.rs`, `src/headless.rs` (`-f`).
+  words, `statistics.rs`: the Statistics file and its records; on-device parts in `stt/local/stats.rs`).
+- `crates/iris`: the binary. `ui/*.slint` (design system in `ui/theme.slint`, `ui/components/`, pages in `ui/pages/`,
+  globals in `ui/globals.slint`), `src/ui/*.rs` (glue: fills `Prefs` from settings, dispatches setters by settings key;
+  `shortcuts.rs` for the Shortcut section and Global Shortcut row; `catalogs.rs` the model menus; `statistics.rs`,
+  `backup.rs` (rfd dialogs), `update.rs` (footer), `recovery.rs` (the lost-transcript card)), `src/services.rs` (Home
+  checks), `src/favicons.rs`, `src/providers.rs` (Android `AppContainer`: every provider, and the one the settings
+  select), `src/dictation.rs` (wires controller, coordinator, hotkeys, cleanup, paste, overlay), `src/local/` (Handy's
+  `engine_supervisor` verbatim in `supervisor/`, `engine.rs`, Silero `vad.rs`), `src/capture.rs`, `src/hotkey.rs`,
+  `src/paste/`, `src/overlay/` (host; Windows window / Linux helper client), `src/cli.rs`, `src/single_instance.rs`,
+  `src/signals.rs`, `src/headless.rs` (`-f`), `src/tray.rs` (+ `ui/tray.slint`), `src/autostart.rs`, `src/sounds.rs`.
 - `crates/iris-overlay`: `ui/overlay.slint`, `OverlayState`/`apply`, geometry, helper IPC frames.
   `crates/iris-overlay-helper`: Linux-only `iris-overlay` binary (layer-shell via SCTK + Slint software renderer, else
   an X11 override-redirect window).
-- `xtask`: dev-only asset generation. `assets/`: fonts, icons, licence texts, `models/` (Silero VAD, embedded).
-  `vendor/sonic`: Sonic C. `packaging/linux/`: udev rule. `docs/`: decisions, manual checks, third-party list.
+- `xtask`: dev-only asset generation (icons, tray icons, sounds, the Rust licence text). `assets/`: fonts, icons,
+  licence texts, sounds, `models/` (Silero VAD, embedded). `vendor/sonic`: Sonic C. `packaging/linux/`: udev rule,
+  `.desktop`, .deb maintainer scripts; packager/deb config at the end of `crates/iris/Cargo.toml`; `scripts/`:
+  packaging; `.github/workflows/release.yml`. `docs/`: architecture, decisions, manual checks, third-party,
+  providers.
 
 ## Conventions
 - Author header in every code file (`/* Author: Jamius Siam / Since: dd/mm/yyyy */`, `#` comments in TOML), date =
   creation day.
 - 120-column lines; rustfmt with `max_width = 120`, `use_small_heuristics = "Max"`.
-- Minimum code, Android names in snake_case, Android copy verbatim unless PLAN.md rewords it for desktop.
+- Minimum code, Android names in snake_case, Android copy verbatim unless reworded for desktop (rewordings are
+  listed in `docs/decisions.md`).
 - Port tests with the Kotlin/Handy test as the spec (same cases, snake_case names).
 - Never push. Commit only when asked, on `feature/port-iris-android`.
 
@@ -75,8 +88,8 @@ cargo test -p iris -- --ignored --test-threads=1`.
 - The window's own `FocusScope` must hold focus for Esc / Alt+Left; fields hand focus back with `Nav.focus-root()`.
 - Keychain calls never run on the UI thread (`ui::off_thread`); results come back as `Prefs.key-op-*` events.
 - `main.rs` checks for `--transcribe-worker` before anything else: the binary is also the engine worker.
-- The controller's state reaches the UI only through `dictation.rs` → `invoke_from_event_loop`; hotkey callbacks run
-  on the hotkey thread and must not call `Hotkeys::register_transcribe` (deadlock).
+- The controller's state reaches the UI only through `dictation.rs` → `invoke_from_event_loop`; hotkey callbacks (and
+  `Hotkeys::register_transcribe`'s status callback) run on the hotkey thread: hand the work on, don't block it.
 - Never log transcripts: `dictation.rs` logs the state's variant name only. Providers never log keys, transcripts,
   custom words or bodies; `NetError` keeps only the innermost cause (reqwest's own message holds the URL).
 - Provider tests use real sockets on 127.0.0.1 (wiremock, `net::test_support::WsServer`): no `start_paused` there
@@ -88,5 +101,8 @@ cargo test -p iris -- --ignored --test-threads=1`.
 - Python edits on Windows: open files with `encoding='utf-8'` (the default code page corrupts "…").
 - `crates/iris/build.rs` stages transcribe-cpp libs into `crates/iris/transcribe-libs/` (gitignored, packaging) and,
   on Linux, next to the binary (`$ORIGIN` rpath). Windows and WSL builds share that staging dir.
+- The tray needs `slint::run_event_loop_until_quit` (closing the window only hides it); call `ui::quit` to quit
+  (it commits a focused field first).
+- `directories` ignores `APPDATA`/`LOCALAPPDATA` overrides on Windows: an app run always uses the real folders.
 - Running the app writes `%APPDATA%\jamius\Iris` / `%LOCALAPPDATA%\jamius\Iris` (Linux: `~/.config/iris`,
   `~/.local/share/iris`, `~/.cache/iris`).

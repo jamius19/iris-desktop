@@ -18,6 +18,7 @@ use tokio::net::TcpStream;
 use tokio::time::Instant;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+use tokio_tungstenite::tungstenite::error::{ProtocolError, SubProtocolError};
 use tokio_tungstenite::tungstenite::http::{HeaderName, HeaderValue};
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use tokio_tungstenite::{Connector, MaybeTlsStream, WebSocketStream, tungstenite};
@@ -148,6 +149,8 @@ pub enum WsConnectError {
         headers: HeaderMap,
         body: String,
     },
+    /// A subprotocol was asked for and the upgrade answer didn't echo one (only the Gateway asks for one).
+    NoSubProtocol,
     Network(NetError),
 }
 
@@ -190,6 +193,9 @@ pub async fn connect_ws(url: &str, headers: &[(&'static str, String)]) -> Result
             let body = String::from_utf8_lossy(&body[..body.len().min(MAX_RESPONSE_BYTES)]).into_owned();
             Err(WsConnectError::Http { status, headers, body })
         }
+        Ok(Err(tungstenite::Error::Protocol(ProtocolError::SecWebSocketSubProtocolError(
+            SubProtocolError::NoSubProtocol,
+        )))) => Err(WsConnectError::NoSubProtocol),
         Ok(Err(e)) => Err(WsConnectError::Network(e.into())),
     }
 }
@@ -249,8 +255,7 @@ pub async fn api_key(source: &KeySource) -> Result<Option<String>, &'static str>
 /// How long a warm-up's connection counts as fresh: inside the 5 min pool keep-alive (Android's 3 min).
 pub const WARM_UP_WINDOW: Duration = Duration::from_secs(180);
 
-/// Android's `warmedUpAt`: a provider's last warm-up whose connection no call has taken yet, so repeats within
-/// [`WARM_UP_WINDOW`] are skipped.
+/// Android's `warmedUpAt`: a provider's last warm-up, so repeats within [`WARM_UP_WINDOW`] are skipped.
 #[derive(Default)]
 pub struct WarmUp {
     at: Mutex<Option<Instant>>,
@@ -285,11 +290,6 @@ impl WarmUp {
                 }
             }
         });
-    }
-
-    /// A call took the warmed connection: the next warm-up opens a new one.
-    pub fn taken(&self) {
-        *self.lock() = None;
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Option<Instant>> {
@@ -349,20 +349,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn warm_up_is_skipped_while_fresh_and_again_once_taken() {
+    async fn warm_up_is_skipped_while_fresh_and_tried_again_after_a_failure() {
         let server = MockServer::start().await;
         Mock::given(method("HEAD")).respond_with(ResponseTemplate::new(405)).mount(&server).await;
+        // Drops every connection unanswered: the warm-up fails.
+        let dead = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let dead_url = format!("http://{}", dead.local_addr().unwrap());
+        tokio::spawn(async move { while dead.accept().await.is_ok() {} });
         let (client, warm_up) = (http_client(), Arc::new(WarmUp::default()));
+
+        warm_up.head(&client, &dead_url, "test");
+        warm_up.head(&client, &server.uri(), "test"); // Still fresh: skipped.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(server.received_requests().await.unwrap().is_empty());
 
         warm_up.head(&client, &server.uri(), "test");
         warm_up.head(&client, &server.uri(), "test");
         tokio::time::sleep(Duration::from_millis(200)).await;
         assert_eq!(1, server.received_requests().await.unwrap().len());
-
-        warm_up.taken();
-        warm_up.head(&client, &server.uri(), "test");
-        tokio::time::sleep(Duration::from_millis(200)).await;
-        assert_eq!(2, server.received_requests().await.unwrap().len());
     }
 
     #[tokio::test]

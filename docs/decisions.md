@@ -2,14 +2,14 @@
 
 Started 16/11/2026 (M1). Newest entries at the end of each section.
 
-## Answers to the plan's open questions (user)
+## Answers to open questions (user)
 - **Q1 Moonshine**: dropped on desktop. Four local models: Nemotron Streaming English (default), Parakeet Unified
   English, Parakeet TDT v3, Whisper Small. A stored `moonshine-base-en` (e.g. from an Android backup) stays in the file
   but reads as the default.
 - **Q2 Releases**: a GitHub release workflow in M4, Android's pattern (push to `main` → build, test, tag, release).
 - **Q3 `--toggle-transcription` with Iris not running**: just starts Iris (Handy's behaviour).
 
-## Defaults the user can still object to (from PLAN §1)
+## Defaults the user can still object to (set when planning)
 Phone wording → "on this computer" and the desktop RAM guide; battery, dontkillmyapp and Accessibility rows dropped;
 haptics, IME placement, predictive back, the draggable bubble, smart spacing and "field changed → copied" dropped;
 hover overlays, keyboard focus rings and Esc / Alt+Left / mouse back added; Overlay Position (default Bottom);
@@ -20,13 +20,13 @@ A backup made on Windows restores `shortcut_transcribe` on Linux as-is (it may s
 ## Spike results (16/11/2026)
 Throwaway code stayed in the session scratch directory; none of it is in the repo.
 
-| Spike | Run? | Outcome | Impact on the plan |
+| Spike | Run? | Outcome | Impact |
 |---|---|---|---|
 | S1 Slint basics | Windows: run (by the M1 app). Linux: run in WSLg (Weston), Wayland and X11. GNOME/KDE: **not run — needs a Linux machine**. | femtovg and software renderers start on Windows, WSLg Wayland and WSLg X11. Variable Inter renders 400/500/600/800 as distinct real weights (WSLg snapshots; Windows software-renderer captures of the app). The Windows desktop was locked, so the app was captured with `PrintWindow`, which can't read femtovg's GL surface: femtovg on Windows started and ran but its output was not seen. `AboutSlint` and `Palette` only exist in `std-widgets.slint`; a selective import works without other widget styling. `PopupWindow` works. Windows dark mode is followed (app came up dark with the OS dark). WSLg has no portal Settings, so `color-scheme` is `unknown` there; Slint 1.18's winit backend reads and watches the portal `color-scheme` itself (verified against a mock portal). | No static Inter instances, no `cargo xtask fonts`. No `iris::theme` portal watcher; `unknown` = light. |
-| S2 Windows overlay | **Partly run**: the PC was locked, so the focus, click and black-fringe checks could not run. One monitor only, so mixed-DPI placement is not run. | Ex-style checks pass: after the fix-up and 400 ms later the overlay has `NOACTIVATE \| TOOLWINDOW \| TOPMOST`; winit rewrites `GWL_EXSTYLE` on every show/hide (control run fails without the fix-up). The hook only affects the overlay when gated. Placement on the 3840×2160 @ 1.5 monitor matched Handy's formula exactly. | Recipe in PLAN §2.6: gate the process-wide attributes hook with a thread-local flag; `no-frame` + `always-on-top` in `overlay.slint`; clear `WS_EX_APPWINDOW`; `WM_STYLECHANGING` guard in the subclass. Remaining checks re-run with the spike harness in M2 (needs an unlocked desktop). |
-| S3 transcribe-cpp outside Tauri | Windows: run (Vulkan, RTX 3050). Linux: run in WSL (CPU; WSL only exposes llvmpipe). | `iris-spike -f test.wav` printed the exact text with Parakeet TDT v3 Q8_0 in a worker process (Handy's framed protocol). Clean debug build 300 s (Windows), 207 s (WSL). No `TRANSCRIBE_CMAKE_ARGS`, NASM or clang needed; the LunarG SDK supplies SPIRV-Headers locally. `transcribe-cpp-sys` 0.4.2 already copies its 13 DLLs into `target/<profile>/`. Only `msvcp140`/`vcruntime140`/`vcruntime140_1` imported (no `vcomp140`). First GPU inference ~10 s (pipeline build), then 143 ms. reqwest 0.13 default rustls (aws-lc-rs) builds without NASM. | M2 step 2 and R5 updated (no extra env, staging only for packaging, rpath with `$ORIGIN` first). CI needs Handy's vcpkg SPIRV-Headers step. Real-Linux Vulkan untested. |
-| S4 Layer-shell helper | **Partly run**: WSLg has no `zwlr_layer_shell_v1`, so layer-shell mode is **not run — needs a Linux machine (KDE/Sway/Hyprland)**. | The SCTK 0.21 + Slint `MinimalSoftwareWindow` + `wl_shm` helper compiles; on an xdg surface it rendered and animated at 61 fps, input region following the card. X11 mode (override-redirect, notification type, `WAYLAND_DISPLAY` removed) showed on XWayland and a synthetic click reached the Slint `TouchArea` without moving focus. | Approach is workable (R2 fallback probably unneeded). Consider pinning the helper to SCTK 0.19 to share winit's copy. |
-| S5 Tray + keyring on Linux | **Partly run** with mocks; KDE, GNOME (AppIndicator), GNOME Keyring and KWallet **not run — needs a Linux machine**. | Tray (ksni under Slint's `system-tray`): menu filled at once, item clicks and icon changes work with a mock StatusNotifierWatcher; without one, only a stderr line. **Bug:** a watcher that appears after the tray was created is never registered with. keyring 4.x requires feature `v1` (or `cli`); `v1` = Windows Credential Manager + zbus Secret Service (no libdbus). Without a Secret Service: `NoDefaultStore`, never retried. | Keep the Slint tray; recreate it when the watcher appears (R4). keyring row in §3 corrected; R9 notes the no-retry behaviour. |
+| S2 Windows overlay | **Partly run**: the PC was locked, so the focus, click and black-fringe checks could not run. One monitor only, so mixed-DPI placement is not run. | Ex-style checks pass: after the fix-up and 400 ms later the overlay has `NOACTIVATE \| TOOLWINDOW \| TOPMOST`; winit rewrites `GWL_EXSTYLE` on every show/hide (control run fails without the fix-up). The hook only affects the overlay when gated. Placement on the 3840×2160 @ 1.5 monitor matched Handy's formula exactly. | Recipe (`architecture.md`, Overlay): gate the process-wide attributes hook with a thread-local flag; `no-frame` + `always-on-top` in `overlay.slint`; clear `WS_EX_APPWINDOW`; `WM_STYLECHANGING` guard in the subclass. Remaining checks re-run with the spike harness in M2 (needs an unlocked desktop). |
+| S3 transcribe-cpp outside Tauri | Windows: run (Vulkan, RTX 3050). Linux: run in WSL (CPU; WSL only exposes llvmpipe). | `iris-spike -f test.wav` printed the exact text with Parakeet TDT v3 Q8_0 in a worker process (Handy's framed protocol). Clean debug build 300 s (Windows), 207 s (WSL). No `TRANSCRIBE_CMAKE_ARGS`, NASM or clang needed; the LunarG SDK supplies SPIRV-Headers locally. `transcribe-cpp-sys` 0.4.2 already copies its 13 DLLs into `target/<profile>/`. Only `msvcp140`/`vcruntime140`/`vcruntime140_1` imported (no `vcomp140`). First GPU inference ~10 s (pipeline build), then 143 ms. reqwest 0.13 default rustls (aws-lc-rs) builds without NASM. | No extra env; libraries staged only for packaging; rpath with `$ORIGIN` first. CI needs Handy's vcpkg SPIRV-Headers step. Real-Linux Vulkan untested. |
+| S4 Layer-shell helper | **Partly run**: WSLg has no `zwlr_layer_shell_v1`, so layer-shell mode is **not run — needs a Linux machine (KDE/Sway/Hyprland)**. | The SCTK 0.21 + Slint `MinimalSoftwareWindow` + `wl_shm` helper compiles; on an xdg surface it rendered and animated at 61 fps, input region following the card. X11 mode (override-redirect, notification type, `WAYLAND_DISPLAY` removed) showed on XWayland and a synthetic click reached the Slint `TouchArea` without moving focus. | Approach is workable (a fallback is probably unneeded). Consider pinning the helper to SCTK 0.19 to share winit's copy. |
+| S5 Tray + keyring on Linux | **Partly run** with mocks; KDE, GNOME (AppIndicator), GNOME Keyring and KWallet **not run — needs a Linux machine**. | Tray (ksni under Slint's `system-tray`): menu filled at once, item clicks and icon changes work with a mock StatusNotifierWatcher; without one, only a stderr line. **Bug:** a watcher that appears after the tray was created is never registered with. keyring 4.x requires feature `v1` (or `cli`); `v1` = Windows Credential Manager + zbus Secret Service (no libdbus). Without a Secret Service: `NoDefaultStore`, never retried. | Keep the Slint tray; recreate it when the watcher appears. keyring needs feature `v1`; the no-retry behaviour is a known limitation. |
 
 ## M1 decisions
 - **Workspace**: `crates/iris-core` (UI-free, tested), `crates/iris` (Slint app), `xtask` (asset generation). The
@@ -51,7 +51,7 @@ Throwaway code stayed in the session scratch directory; none of it is in the rep
   `webpki-roots`); both permissive.
 - **Not done in M1, by design**: Global Shortcut row and Shortcut section (M2), download group (M2), model catalogues
   and refresh buttons (M3), Statistics and Backup pages (M4), update status in the footer (M4), Rust libraries licence
-  text (M4), close-to-tray (M4: close quits now).
+  text (M4), close-to-tray (M4). All of these were done in M2–M4.
 - **Small visual differences from Android**: the dropdown panel fades in (no scale-Y, no fade-out: Slint closes popups
   at once); the multi-line field grows without the 10-line cap; text line heights use the font's natural height.
 
@@ -61,10 +61,10 @@ Throwaway code stayed in the session scratch directory; none of it is in the rep
   opens it. Recording, VAD gate, keep-alive and Audio Speed run inside that pull (no separate pipeline thread; the
   Silero call is ~1 ms per 32 ms frame). Errors are `SttError(String)` with the user-facing text.
 - **Controller** (`iris-core::dictation::controller`): Android's states, hold times and errors. A generation counter
-  under one lock drops late updates from a cancelled session. A panicking session ends in "Something went wrong".
-  Not ported yet: cleanup warm-up (M3) and statistics hooks (M4). The recording ends when the session drops the
-  capture receiver; the capture thread then closes the microphone on its own, so Done can show before the
-  microphone is released.
+  under one lock drops late updates from a cancelled session. A panicking session ends in "Something went wrong". Not
+  ported yet: cleanup warm-up (M3) and statistics hooks (M4); both done since. The recording ends when the session drops
+  the capture receiver; the capture thread then closes the microphone on its own, so Done can show before the microphone
+  is released.
 - **Coordinator**: Handy's machine for Iris's one transcribe shortcut. The app calls `notify_processing_finished` on
   every Done/Error and `notify_cancel(true)` when a listening session is cancelled. Cancel (✕, Esc shortcut,
   `--cancel`, IPC) only acts while Listening; finalizing can't be cancelled.
@@ -76,7 +76,7 @@ Throwaway code stayed in the session scratch directory; none of it is in the rep
 - **No tail padding**: checked with Nemotron on a WAV cut 50 ms after the last word: transcribe-cpp's `finalize`
   decodes the tail (the full sentence came back), so Android's 1.3 s padding is not added.
 - **Engine** (`iris::local::engine`): one `EngineSupervisor::new(true)` for the app. Accelerator `cpu` loads with
-  `Backend::Cpu`, which makes the supervisor start a CPU-only worker (the effect PLAN describes as
+  `Backend::Cpu`, which makes the supervisor start a CPU-only worker (the same effect as
   `EngineSupervisor::new(false)`), and a change reloads on the next use; `auto` also clears an earlier GPU failure
   (Handy's `retry_gpu` on an accelerator change). The supervisor files are Handy's, verbatim apart from `IRIS_*`
   names and comments; its unused parts (cancel, device listing) stay, with `allow(dead_code)`.
@@ -100,7 +100,7 @@ Throwaway code stayed in the session scratch directory; none of it is in the rep
   Windows: the pipe `iris-desktop-<USERNAME>-<session id>.sock`. Each connection is read on its own thread (one
   256-byte line, 1 s timeout on Linux). A software-renderer relaunch skips forwarding and retries binding for 1 s
   while the failed instance exits; if binding still fails and a running instance answers, this one exits.
-- **`--start-hidden`** is accepted but the window shows until the tray exists (M4).
+- **`--start-hidden`** is accepted but the window shows until the tray exists (M4; done there).
 - **`-f/--transcribe-file`** runs the on-device provider (streaming or per phrase, as in a dictation) on a 16 kHz
   mono 16-bit WAV in 50 ms chunks, without the speech gate, and prints the text. Language comes from the settings.
 - **Downloads**: one GGUF per model, the store from Android with Handy's transport (see the store's module docs);
@@ -112,7 +112,7 @@ Throwaway code stayed in the session scratch directory; none of it is in the rep
   resets the default. New error text for a binding handy-keys can't use on this platform: "This shortcut doesn't work
   here. Pick another one." `InUse` can only mean Iris's own other binding (handy-keys can't see other apps').
 - **Paste**: on a failed paste the transcript stays on the clipboard (no restore) and the notice "Couldn't paste. The
-  text is on the clipboard." shows (Handy restores; PLAN keeps the text). Only when the text couldn't be put on the
+  text is on the clipboard." shows (Handy restores; Iris keeps the text). Only when the text couldn't be put on the
   clipboard either (wl-copy, then arboard on Wayland) does the notice say so and carry the text: "Couldn't paste or
   copy. Your text: …". Wayland never falls back to enigo (it would only reach XWayland apps). On Wayland the clipboard
   is saved as text when a text type is offered, else as the bytes of the first offered type (e.g. an image), restored
@@ -183,7 +183,125 @@ Throwaway code stayed in the session scratch directory; none of it is in the rep
   `EngineSupervisor::cancel`, which kills the worker only if a decode is running (the next use reloads the model, as
   in Handy). Streaming sessions already stop by dropping the engine stream.
 - **Keychain probe race**: the start probe is repeated if a key was saved or cleared while it ran.
-- **Not ported**: statistics hooks (M4; `timed_cleanup` keeps its `record` argument for them); Kotlin tests that
+- **Not ported**: statistics hooks (done in M4; `timed_cleanup` keeps its `record` argument for them); Kotlin tests that
   check OkHttp internals (connection reuse, `EventListener`) or WebSocket warm-ups (see the M3 report).
 - **Dependencies added**: see `docs/third-party.md`.
 
+
+## M4 decisions
+- **Statistics** (`iris-core::dictation::statistics`, `stt::local::stats`): Android's model, one file
+  `<config>/statistics.json` with Android's four sections and field names; each section decodes on its own and a
+  corrupt file starts over (logged). Writes are atomic, run on the blocking pool, serialized, always saving the latest
+  snapshot; callers never wait. Time Saved compares with typing at **40 WPM** on a keyboard (Android: 38 on a phone).
+  Only word counts reach statistics, never text. Busy time: an on-device decode's worker wall time; a stream's sum of
+  the supervisor's per-feed and finalize `elapsed` (plus the one-run fallback decode). A dictation is recorded only
+  when the final hook returns Done. `word_count` splits on Unicode whitespace (Java's `\s` is ASCII only). The
+  Statistics page's empty state says "on this computer" (Android: "on this phone").
+- **Backup**: byte-compatible with Android (`architecture.md`, Backup file). Evidence: the Android repo's real Kotlin
+  `encodeBackup`/`encryptBackup`, run in a JVM unit test (Gradle, offline, scratch copy of the repo), made
+  `crates/iris-core/src/settings/backup/android.irisbackup` (600,000 iterations, non-ASCII password), which the desktop
+  test `android_backup_decrypts_and_decodes` restores exactly; and a desktop-made backup (desktop-only keys, floats,
+  non-ASCII secrets, a 4-byte UTF-8 password character) was decoded by Android's `decryptBackup`/`decodeBackup` with
+  every value and type intact. Both ran on the JVM's SunJCE; a phone (BouncyCastle PBKDF2, Conscrypt GCM) is a manual
+  check. Restore replaces **all** settings, as Android's page says, so restoring an Android backup on desktop resets the
+  desktop-only keys (shortcut, paste, sounds, startup) to their defaults; Android keeps desktop keys as unknown keys and
+  the desktop keeps `bubble_side` / `bubble_y_fraction`. `to_settings` now rejects a `bubble_side` other than
+  `LEFT`/`RIGHT` (Android's `valueOf`). After a restore the app refreshes, re-probes keys, reloads model lists,
+  re-registers the shortcut and re-applies Launch at Startup (not after a wrong password, a damaged file or a
+  non-backup file: nothing changed). Passwords live in Slint strings (not zeroed, unlike Android's char arrays); they
+  are cleared after success and when the page is left, never logged. Export reads only the five fixed key names and
+  the current custom providers' keys, because keychains can't be listed (Android's `getAll()` exports every stored
+  secret). Restore stores only the names the restored settings know and drops any other name (Android stores any
+  name, but its `replaceAll` clears them all the next time). Restore isn't atomic across the keychain: Android
+  encrypts everything first and writes all keys in one edit; the desktop clears, writes the settings, then puts the
+  keys one by one, so a keychain failure partway leaves some restored providers without a key while the page says
+  "Couldn't restore the backup. Try again.". It never leaves an orphaned key.
+- **Backup page**: native dialogs with `rfd` (Windows common dialogs; Linux XDG portal over libdbus loaded at run time,
+  zenity as fallback, no GTK), default name `iris-backup-YYYYMMDD.irisbackup`, filter "Iris backup". The file is
+  written next to the target and renamed over it; a failed write removes only that temp file and never touches an
+  existing file. New copy: the filter name and "Backup file" for a picked file without a name.
+- **Update check**: `https://api.github.com/repos/jamius19/iris-desktop/releases/latest` with `User-Agent:
+  iris-desktop`, once at start; "Up to date" re-checks on click, "Update available" links to the releases page; a 404
+  (no release yet) is up to date, anything else unknown (nothing shown). Uses the providers' client (same-origin
+  redirects only).
+- **Tray**: Slint's `SystemTrayIcon` (feature `system-tray`; ksni on Linux). Icons idle / recording / working,
+  generated by `cargo xtask tray`; Windows picks the variant by the taskbar theme (`SystemUsesLightTheme`) and the size
+  by system DPI (Slint hands one bitmap to `Shell_NotifyIcon`); Linux follows the app theme. Menu Settings / Cancel
+  (only while listening) / Quit; left click shows the window. Linux login race (spike S5): the tray is recreated when
+  `org.kde.StatusNotifierWatcher` gets an owner, and the app never starts hidden without one.
+- **Window**: close hides to the tray (quits without a tray); a focused text field is committed first (`focus-root`)
+  on hide and on Quit. `--start-hidden` needs a tray (else the window shows, logged); `--no-tray` makes close quit.
+- **Launch at Startup**: `auto-launch` with the name `Iris` and `--start-hidden`; the path is the executable or
+  `$APPIMAGE`, quoted. Applied at start and on change; only rewritten when missing or different. Turning it off removes
+  the Run value but leaves Windows' inert `StartupApproved\Run\Iris` (the NSIS uninstaller removes both). Error text
+  (new): "Couldn't update the startup entry.".
+- **Sounds**: original tones, not Handy's `pop_*.wav`: Handy's files came from a contributor PR with no recorded
+  provenance or licence, so `cargo xtask sounds` generates `assets/sounds/{start,stop}.wav` (120 ms sine sweep
+  587↔880 Hz). rodio decodes WAV with `hound` (its `wav` feature pulls symphonia, MPL-2.0). Played on entering and
+  leaving Listening on a dedicated thread, at the Volume setting.
+- **About**: the "Rust libraries" text is `assets/licenses/THIRD_PARTY_LICENSES.txt`, generated by `cargo xtask
+  licenses` (crates from `cargo tree -e normal` for the shipped binaries on both targets, licence files from each
+  package, identical texts grouped) instead of `cargo about` (not installed). Shown in a `ListView` with one item per
+  line: one 0.9 MB text blocked the software renderer for seconds; the list opens in under 10 ms.
+- **Executable icon**: `winresource` embeds `iris.ico` and the "Iris" product name in `iris.exe`.
+- **Shortcut registration** runs on the hotkey thread; its status comes back through `invoke_from_event_loop` and only
+  the latest request's status is applied. The hotkey thread no longer polls: handy-keys' manager can't block, so Iris
+  uses `KeyboardListener`s and a port of the manager's matching (`Matcher`, MIT) and blocks on its own channel.
+- **Silero VAD** loads off the async workers and a failed load is retried by the next session (a failed CPU-backend
+  registration is still cached).
+- **Windows `iris -f`**: release builds attach to the parent console (`AttachConsole`) for `-f`, `--help`,
+  `--version` and argument errors; the shell prompt may come back before the output.
+- **Single instance (Windows)**: the client checks that the pipe server runs as the same user
+  (`GetNamedPipeServerProcessId` → process token → `EqualSid`) before sending; otherwise it behaves as if none answered.
+- **Lost transcript**: when the text could be neither pasted nor copied, Home shows a card "Last dictation wasn't
+  inserted" with the text, Copy and Dismiss (new copy, plus "Couldn't copy. Select the text and press Ctrl+C."). Memory
+  only; replaced by the next such failure.
+- **Model delete during a dictation**: loading a model the store no longer counts as downloaded fails with "Download
+  the … model in Iris settings". **Warm-up** runs only once the selected model is downloaded (also from the download
+  watcher).
+- **AI Gateway subprotocol**: a handshake without the subprotocol echo fails at once with "AI Gateway handshake failed
+  (subprotocol)" (no reconnect). Whether the real server echoes is still a manual check.
+- **WebSocket send queues stay unbounded** (OkHttp fails past 16 MiB): a stalled network already fails a socket within
+  10 s (write timeout) or about 60 s (missed pong), so a stall queues at most ~10 s of audio; only an uplink slower than
+  the audio bitrate grows the queue, and that backlog fails at the 60 s drain after stop anyway.
+- **Tidy-ups**: `net::WarmUp::taken`, unused `_client` constructor parameters and the
+  `vercel::protocol::is_header_value` forwarder removed; missed-pong tests for Gateway and Soniox (injectable ping
+  interval).
+- **Lucide** downloads in `xtask` are pinned to the 1.72.0 tag's commit `03eae6069edfc373673bd05d723491f05ba936e3`.
+- **Packaging**: cargo-packager 0.11 (NSIS, AppImage) and cargo-deb (the .deb, for its maintainer scripts), configured
+  in `crates/iris/Cargo.toml`; `scripts/package.{ps1,sh}`. The AppImage puts the transcribe-cpp libraries in `usr/lib`
+  (linuxdeploy resets the RUNPATH to `$ORIGIN/../lib`, and transcribe-cpp finds its backends next to
+  `libtranscribe`); the .deb ships the real binary at `/usr/bin/iris` with `/usr/lib/iris` on its rpath. The .deb's
+  postinst/postrm reload udev and re-trigger only keyboards and uinput (skipped without `/run/udev`). The NSIS
+  uninstaller removes the startup entry except during an upgrade (`/P`).
+- **Release workflow** (`.github/workflows/release.yml`): on push to `main`: core tests, NSIS (windows-latest, Vulkan
+  SDK + vcpkg SPIRV-Headers as Handy), .deb + AppImage (ubuntu-22.04), the `#[ignore]` engine tests only when the
+  repository variable `IRIS_ENGINE_TESTS` is `true` (Nemotron downloaded at its pinned revision and hash, a WAV from
+  espeak-ng; the five GPU-only tests are skipped on runners without a GPU), then tag `v<version>` + GitHub Release if
+  the tag doesn't exist. Actions pinned by commit SHA; only the release job can write. The Rust toolchain is pinned to
+  1.99 (the version the tests ran with), so a new stable release can't change a release build without a commit.
+
+## Known limitations
+- Unsigned Windows installer: SmartScreen warns on first run.
+- GNOME Wayland has no layer-shell: the overlay is an XWayland window, on the primary monitor when the pointer position
+  isn't known; GNOME needs the AppIndicator extension for the tray.
+- The Linux global shortcut needs read access to keyboard event devices (the udev rule; any app of the seat user can
+  then read the keyboard) or a compositor binding to `iris --toggle-transcription`.
+- `ydotool type` (Direct typing on Wayland) mangles non-US and non-Latin text; Ctrl+V is the default.
+- keyring's `v1` store picks the Linux Secret Service once per process: one started later is not retried.
+- Finalizing can't be cancelled (as on Android).
+- x86_64 only (Windows and Linux).
+- `directories` ignores `APPDATA`/`LOCALAPPDATA` overrides on Windows: test runs of the app use the real folders.
+- cargo-packager's AppImage step downloads linuxdeploy and AppRun without a hash check (a gap in the tool).
+
+## Future work
+- Code signing for the Windows installer.
+- `keyring-core` + store crates so a late Secret Service is retried.
+- Shrink the licence file: its Apache-2.0 texts are near-duplicates (44 variants, ~0.5 MB).
+- A 16 MiB cap on WebSocket send queues if slow uplinks ever matter.
+- ARM64 builds.
+- Release workflow: verify the LunarG apt key's fingerprint and use `signed-by=` instead of
+  `/etc/apt/trusted.gpg.d/`.
+- Tests not written: the autostart stored-vs-wanted comparison (needs the comparison split out of `apply`), the
+  single-instance SID check's error path (needs Win32), and the hotkey `Matcher` with both slots registered or with
+  `unregister` while a slot is pressed.

@@ -1,0 +1,13 @@
+#!/bin/sh
+# Author: Jamius Siam
+# Since: 16/11/2026
+#
+# Applies /usr/lib/udev/rules.d/70-iris-input.rules at once, re-triggering only keyboards and uinput (the same
+# commands as the in-app installer in crates/iris/src/hotkey.rs). Skipped without a running udev (chroot, container).
+set -e
+
+if [ "$1" = configure ] && [ -d /run/udev ]; then
+    udevadm control --reload || true
+    udevadm trigger --action=change --subsystem-match=input --property-match=ID_INPUT_KEYBOARD=1 || true
+    udevadm trigger --action=change --subsystem-match=misc --sysname-match=uinput || true
+fi

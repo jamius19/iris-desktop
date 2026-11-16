@@ -7,7 +7,7 @@
 //! serves it; a later one sends one JSON line (`{"cmd":"toggle"|"cancel"|"show"}`) and exits. If connecting fails,
 //! the later instance becomes the first. Each connection is read on its own short-lived thread, at most one 256-byte
 //! line (with a 1 s timeout on Linux), so a stalled or flooding client can't hold up later commands. On Linux a
-//! connection from another user is dropped.
+//! connection from another user is dropped; on Windows a later instance sends nothing to a pipe another user serves.
 
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::sync::Arc;
@@ -29,6 +29,17 @@ struct Message {
 pub fn forward(command: &str) -> bool {
     let send = || -> io::Result<()> {
         let mut stream = Stream::connect(name()?)?;
+        // Another user could have created the pipe first; a command must not reach them.
+        #[cfg(windows)]
+        {
+            let Stream::NamedPipe(pipe) = &stream;
+            let owned =
+                pipe.inner().server_process_id().and_then(|server| owner::same_user(server, std::process::id()));
+            if !owned.as_ref().is_ok_and(|same| *same) {
+                log::warn!("The instance pipe isn't served by this user ({owned:?}); not sending to it");
+                return Err(io::Error::other("the instance pipe belongs to another user"));
+            }
+        }
         let mut line = serde_json::to_vec(&Message { cmd: command.into() })?;
         line.push(b'\n');
         stream.write_all(&line)?;
@@ -164,4 +175,55 @@ fn user() -> String {
 fn user() -> String {
     // SAFETY: getuid has no preconditions and can't fail.
     unsafe { libc::getuid() }.to_string()
+}
+
+/// Windows: which user a process runs as (its token's user SID).
+#[cfg(windows)]
+mod owner {
+    use std::io;
+
+    use windows::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows::Win32::Security::{EqualSid, GetTokenInformation, PSID, TOKEN_QUERY, TOKEN_USER, TokenUser};
+    use windows::Win32::System::Threading::{OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION};
+
+    /// Whether processes `a` and `b` run as the same user.
+    pub fn same_user(a: u32, b: u32) -> io::Result<bool> {
+        let (a, b) = (token_user(a)?, token_user(b)?);
+        // SAFETY: both buffers hold a TOKEN_USER whose SID points into the same, still alive, buffer.
+        Ok(unsafe { EqualSid(sid(&a), sid(&b)) }.is_ok())
+    }
+
+    /// Process `pid`'s TOKEN_USER, in a u64 buffer so it is aligned for the struct.
+    fn token_user(pid: u32) -> io::Result<Vec<u64>> {
+        // SAFETY: the out-pointers are valid for the calls, the buffer holds `len` bytes, and both handles are closed.
+        unsafe {
+            let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid)?;
+            let mut token = HANDLE::default();
+            let opened = OpenProcessToken(process, TOKEN_QUERY, &mut token);
+            let _ = CloseHandle(process);
+            opened?;
+            let mut len = 0u32;
+            // Fails with the buffer size needed.
+            let _ = GetTokenInformation(token, TokenUser, None, 0, &mut len);
+            let mut buffer = vec![0u64; (len as usize).div_ceil(8)];
+            let read = GetTokenInformation(token, TokenUser, Some(buffer.as_mut_ptr().cast()), len, &mut len);
+            let _ = CloseHandle(token);
+            read?;
+            Ok(buffer)
+        }
+    }
+
+    fn sid(token_user: &[u64]) -> PSID {
+        // SAFETY: filled by GetTokenInformation(TokenUser), so it starts with a TOKEN_USER.
+        unsafe { (*token_user.as_ptr().cast::<TOKEN_USER>()).User.Sid }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        #[test]
+        fn this_process_runs_as_its_own_user() {
+            let pid = std::process::id();
+            assert!(super::same_user(pid, pid).unwrap());
+        }
+    }
 }

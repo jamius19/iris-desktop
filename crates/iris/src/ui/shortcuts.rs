@@ -6,6 +6,8 @@
 //! The global shortcuts: the Dictation page's Shortcut section (key caps, recording, reset) and Home's Global
 //! Shortcut row (registration status, Setup).
 
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use iris_core::settings::{DEFAULT_SHORTCUT_CANCEL, DEFAULT_SHORTCUT_TRANSCRIBE, Settings};
 use slint::{ComponentHandle, SharedString};
 
@@ -64,14 +66,25 @@ pub fn fill(state: &AppState, settings: &Settings) {
     );
 }
 
-/// (Re)registers the transcribe shortcut; Linux retries keyboard access each time (after the udev Setup).
+/// (Re)registers the transcribe shortcut on the hotkey thread; Linux retries keyboard access each time (after the udev
+/// Setup). The status comes back later and refreshes the UI; only the latest request's status is shown.
 pub fn register(state: &mut AppState) {
+    static LATEST: AtomicU64 = AtomicU64::new(0);
+    let request = LATEST.fetch_add(1, Ordering::SeqCst) + 1;
     let binding = state.store.settings(&state.stored_secrets).shortcut_transcribe;
-    let status = state.dictation.hotkeys.register_transcribe(&binding);
-    if status != ShortcutStatus::Registered {
-        log::warn!("The transcribe shortcut {binding} isn't registered: {status:?}");
-    }
-    state.services.shortcut = Some(status);
+    state.dictation.hotkeys.register_transcribe(&binding.clone(), move |status| {
+        if status != ShortcutStatus::Registered {
+            log::warn!("The transcribe shortcut {binding} isn't registered: {status:?}");
+        }
+        let _ = slint::invoke_from_event_loop(move || {
+            if LATEST.load(Ordering::SeqCst) == request {
+                with_state(|state| {
+                    state.services.shortcut = Some(status);
+                    refresh(state);
+                });
+            }
+        });
+    });
 }
 
 /// A recording finished: saves the binding (None = cancelled).
@@ -92,9 +105,9 @@ fn save(state: &mut AppState, key: &str, binding: &str) {
     };
     let error = saved(state, result);
     if key != "cancel" {
-        register(state);
+        // A failed save leaves the stored binding, which the hotkey thread still has (re-registered after recording).
         if error.is_empty() {
-            refresh(state);
+            register(state);
         } else {
             state.window.global::<Prefs>().set_shortcut_transcribe_error(error);
         }

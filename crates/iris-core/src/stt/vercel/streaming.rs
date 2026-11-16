@@ -26,16 +26,18 @@ use tokio_tungstenite::tungstenite::{Bytes, Message};
 
 use super::protocol::{
     AUDIO_DONE, GatewayPart, LiveTranscript, PROTOCOL_VERSION, SPECIFICATION_VERSION, SUBPROTOCOL, TRANSCRIPTION_URL,
-    gateway_closed_message, gateway_network_error_message, gateway_sample_rate, http_error_message, is_header_value,
-    only_trims, parse_gateway_part, provider_options, start_frame, stream_url,
+    gateway_closed_message, gateway_network_error_message, gateway_sample_rate, http_error_message, only_trims,
+    parse_gateway_part, provider_options, start_frame, stream_url,
 };
-use crate::net::{self, KeySource, NetError, PING_INTERVAL, WsConnectError, WsStream};
+use crate::net::{self, KeySource, NetError, WsConnectError, WsStream, is_header_value};
 use crate::stt::{AudioSource, BoxFuture, OnPartial, SpeechToTextProvider, SttError, SttRequest};
 
 const TAG: &str = "VercelGatewayStt";
 const NO_KEY: &str = "Add your Vercel AI Gateway API key in Iris settings";
 /// A key that can't be a header value (Android has no text for it).
 const INVALID_KEY: &str = "Invalid Vercel AI Gateway API key";
+/// The upgrade answer didn't echo the subprotocol, so tungstenite failed the handshake (Android has no text for it).
+const SUBPROTOCOL_FAILED: &str = "AI Gateway handshake failed (subprotocol)";
 const STALL_MESSAGE: &str = "Timed out waiting for the transcript";
 const DRAIN_TIMEOUT: Duration = Duration::from_secs(60);
 const DRAIN_POLL: Duration = Duration::from_millis(10);
@@ -58,12 +60,13 @@ pub struct VercelGatewaySpeechToText {
     url: String,
     reconnect_timeout: Duration,
     reconnect_delay: Duration,
+    ping_interval: Duration,
 }
 
 impl VercelGatewaySpeechToText {
-    /// `client` is unused: the WebSocket opens its own connection (no warm-up to reuse).
-    pub fn new(_client: reqwest::Client, api_key: KeySource) -> Self {
-        Self::with_urls(api_key, TRANSCRIPTION_URL, RECONNECT_TIMEOUT, RECONNECT_DELAY)
+    /// The WebSocket opens its own connection (no warm-up to reuse), so no HTTP client.
+    pub fn new(api_key: KeySource) -> Self {
+        Self::with_urls(api_key, TRANSCRIPTION_URL, RECONNECT_TIMEOUT, RECONNECT_DELAY, net::PING_INTERVAL)
     }
 
     pub(crate) fn with_urls(
@@ -71,8 +74,9 @@ impl VercelGatewaySpeechToText {
         url: &str,
         reconnect_timeout: Duration,
         reconnect_delay: Duration,
+        ping_interval: Duration,
     ) -> Self {
-        VercelGatewaySpeechToText { api_key, url: url.to_string(), reconnect_timeout, reconnect_delay }
+        VercelGatewaySpeechToText { api_key, url: url.to_string(), reconnect_timeout, reconnect_delay, ping_interval }
     }
 }
 
@@ -115,6 +119,7 @@ impl SpeechToTextProvider for VercelGatewaySpeechToText {
                     ("ai-model-id", model.clone()),
                 ],
                 model: model.clone(),
+                ping_interval: self.ping_interval,
             });
             let rate = gateway_sample_rate(&model);
             let start = start_frame(rate, provider_options(&model, &request.language, true).as_ref());
@@ -133,6 +138,7 @@ struct Target {
     url: String,
     headers: Vec<(&'static str, String)>,
     model: String,
+    ping_interval: Duration,
 }
 
 /// What the socket tasks report, tagged with their attempt so a replaced socket's late events are ignored.
@@ -459,7 +465,7 @@ impl Socket {
                     if attempt == 0 {
                         debug!("{TAG}: Timing: transcribe->ws open {} ms", started_at.elapsed().as_millis());
                     }
-                    run_socket(socket, attempt, queue, &task_queued, &events).await
+                    run_socket(socket, attempt, target.ping_interval, queue, &task_queued, &events).await
                 }
             };
             if let Some((message, retryable)) = failure {
@@ -510,21 +516,23 @@ impl Drop for Socket {
     }
 }
 
-/// The failure of a handshake: an HTTP rejection isn't retried.
+/// The failure of a handshake: an HTTP rejection or a missing subprotocol echo isn't retried.
 fn connect_failure(error: WsConnectError, model: &str) -> (String, bool) {
     match error {
         WsConnectError::Http { status, body, .. } => (http_error_message(status, &body), false),
+        WsConnectError::NoSubProtocol => (SUBPROTOCOL_FAILED.into(), false),
         WsConnectError::InvalidHeader("ai-model-id") => (format!("Invalid model id: {model}"), false),
         WsConnectError::InvalidHeader(_) => (INVALID_KEY.into(), false),
         WsConnectError::Network(error) => (gateway_network_error_message(&error), true),
     }
 }
 
-/// Writes the queue in order and pings every [`PING_INTERVAL`], while reading parts; returns how the socket failed,
+/// Writes the queue in order and pings every `ping_interval`, while reading parts; returns how the socket failed,
 /// or None after a normal close.
 async fn run_socket(
     socket: WsStream,
     attempt: usize,
+    ping_interval: Duration,
     mut queue: mpsc::UnboundedReceiver<Out>,
     queued: &AtomicUsize,
     events: &mpsc::UnboundedSender<Event>,
@@ -532,7 +540,7 @@ async fn run_socket(
     let (mut sink, mut stream) = socket.split();
     let awaiting_pong = AtomicBool::new(false);
     let write = async {
-        let mut ping = tokio::time::interval_at(Instant::now() + PING_INTERVAL, PING_INTERVAL);
+        let mut ping = tokio::time::interval_at(Instant::now() + ping_interval, ping_interval);
         ping.set_missed_tick_behavior(MissedTickBehavior::Delay);
         loop {
             tokio::select! {

@@ -78,7 +78,7 @@ pub fn probe_stored() {
     with_state(probe);
 }
 
-fn probe(state: &mut AppState) {
+pub fn probe(state: &mut AppState) {
     let settings = state.store.settings(&state.stored_secrets);
     let names = SecretStore::names(settings.custom_cleanup_providers.iter().map(|p| p.id.as_str()));
     let started_at = state.key_op_seq;

@@ -3,8 +3,8 @@
 * Since: 16/11/2026
 */
 
-//! The app ↔ `iris-overlay` helper protocol (PLAN §2.5): frames of a u32 little-endian length and JSON, over the
-//! helper's stdin (app → helper) and stdout (helper → app). The helper exits on stdin EOF.
+//! The app ↔ `iris-overlay` helper protocol (`docs/architecture.md`, IPC): frames of a u32 little-endian length and
+//! JSON, over the helper's stdin (app → helper) and stdout (helper → app). The helper exits on stdin EOF.
 
 use std::io::{self, Read, Write};
 

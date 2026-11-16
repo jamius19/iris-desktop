@@ -7,7 +7,7 @@ protocol code, and update the date when you do.
 Copied from the Android app (16/11/2026). The desktop protocol code in `crates/iris-core/src/stt/` and
 `crates/iris-core/src/cleanup/` is a port of the Kotlin files named below (same protocol, same strings); the sections
 are Android's, the desktop differences are under "Desktop" at the end. The on-device section describes Android's
-sherpa-onnx models; desktop uses GGUF models through transcribe.cpp (`stt/local/models.rs`, PLAN §M2.9).
+sherpa-onnx models; desktop uses GGUF models through transcribe.cpp (`stt/local/models.rs`, `architecture.md`).
 
 ## STT
 

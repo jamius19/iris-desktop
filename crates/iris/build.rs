@@ -18,6 +18,22 @@ fn main() {
     stage_transcribe_runtime_libs();
     // After the transcribe staging, which recreates transcribe-libs/.
     stage_vc_runtime_dlls();
+    #[cfg(windows)]
+    embed_windows_icon();
+}
+
+/// The exe's icon resource, which the Start menu shortcut, the taskbar and Explorer show, and its names (Task
+/// Manager shows FileDescription).
+#[cfg(windows)]
+fn embed_windows_icon() {
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
+        return;
+    }
+    let icon = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("../../assets/icons/app/iris.ico");
+    println!("cargo:rerun-if-changed={}", icon.display());
+    let mut resource = winresource::WindowsResource::new();
+    resource.set_icon(icon.to_str().unwrap()).set("ProductName", "Iris").set("FileDescription", "Iris");
+    resource.compile().expect("compile the exe's icon resource");
 }
 
 /// From Handy's build.rs (MIT): with `IRIS_VC_REDIST_DIRS` set (packaging), copies the VC++ runtime DLLs the native

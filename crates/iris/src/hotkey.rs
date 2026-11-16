@@ -3,16 +3,21 @@
 * Since: 16/11/2026
 */
 
-//! Global shortcuts, from Handy `shortcut/handy_keys.rs`: one thread owns the handy-keys `HotkeyManager` (Windows: the
-//! low-level hook, which blocks the bound keys; Linux: evdev, read-only, needs only `/dev/input` read access) and,
-//! while the settings UI records a shortcut, a `KeyboardListener`. Key auto-repeat doesn't repeat `Pressed`: the
-//! manager tracks held hotkeys.
+//! Global shortcuts, from Handy `shortcut/handy_keys.rs`: one thread owns the shortcuts and, while the settings UI
+//! records a shortcut, a capture. Key events come from handy-keys `KeyboardListener`s (Windows: the low-level hook,
+//! which blocks the bound keys; Linux: evdev, read-only, needs only `/dev/input` read access), each forwarded by its
+//! own thread into the hotkey thread's channel, so that thread sleeps until a command or a key event arrives
+//! (handy-keys `HotkeyManager` can only be polled next to the commands). [`Matcher`] is the manager's matching. Key
+//! auto-repeat doesn't repeat `Pressed`: the matcher tracks held hotkeys.
 
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::{Arc, PoisonError};
 use std::thread;
 use std::time::Duration;
 
-use handy_keys::{Error, Hotkey, HotkeyId, HotkeyManager, HotkeyState, Key, KeyEvent, KeyboardListener};
+use handy_keys::{BlockingHotkeys, Error, Hotkey, Key, KeyEvent, KeyboardListener};
 
 pub enum HotkeyEvent {
     Transcribe { pressed: bool },
@@ -22,7 +27,7 @@ pub enum HotkeyEvent {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ShortcutStatus {
     Registered,
-    /// The binding is already taken (handy-keys only knows its own bindings, e.g. transcribe = cancel).
+    /// The binding is already taken (only Iris's own bindings are known, e.g. transcribe = cancel).
     InUse,
     /// The keyboard can't be read (Linux: no `/dev/input` access).
     NoAccess,
@@ -30,51 +35,65 @@ pub enum ShortcutStatus {
 }
 
 type OnDone = Box<dyn FnOnce(Option<String>) + Send>;
+type OnStatus = Box<dyn FnOnce(ShortcutStatus) + Send>;
 
-enum Command {
-    Transcribe(String, Sender<ShortcutStatus>),
+enum Message {
+    Transcribe(String, OnStatus),
     Cancel(Option<String>),
     Record(OnDone),
     StopRecording,
+    /// A key event from the shortcut listener (None) or from recording `n`'s listener.
+    Key(Option<u64>, KeyEvent),
+    /// The last [Hotkeys] clone was dropped.
+    Stop,
 }
 
 /// Handle to the hotkey thread, which stops when the last clone is dropped. Callbacks run on that thread: hand the
-/// work on, and don't call [Hotkeys::register_transcribe] from them (it waits for the thread).
+/// work on.
 #[derive(Clone)]
 pub struct Hotkeys {
-    commands: Sender<Command>,
+    messages: Sender<Message>,
+    _stop: Arc<StopOnDrop>,
+}
+
+struct StopOnDrop(Sender<Message>);
+
+impl Drop for StopOnDrop {
+    fn drop(&mut self) {
+        let _ = self.0.send(Message::Stop);
+    }
 }
 
 impl Hotkeys {
     pub fn start(on_event: impl Fn(HotkeyEvent) + Send + 'static) -> Self {
-        let (commands, receiver) = mpsc::channel();
+        let (messages, receiver) = mpsc::channel();
+        let forwarders = messages.clone();
         thread::Builder::new()
             .name("hotkeys".into())
-            .spawn(move || run(receiver, on_event))
+            .spawn(move || run(receiver, forwarders, on_event))
             .expect("couldn't start the hotkey thread");
-        Self { commands }
+        Self { messages: messages.clone(), _stop: Arc::new(StopOnDrop(messages)) }
     }
 
-    /// Registers the transcribe shortcut (handy-keys syntax), replacing the previous one.
-    pub fn register_transcribe(&self, binding: &str) -> ShortcutStatus {
-        let (response, status) = mpsc::channel();
-        let _ = self.commands.send(Command::Transcribe(binding.to_owned(), response));
-        status.recv().unwrap_or(ShortcutStatus::NoAccess)
+    /// Registers the transcribe shortcut (handy-keys syntax), replacing the previous one, on the hotkey thread (opening
+    /// the keyboard can take a while); `on_status` then gets the result there. Requests are handled in order.
+    pub fn register_transcribe(&self, binding: &str, on_status: impl FnOnce(ShortcutStatus) + Send + 'static) {
+        let _ = self.messages.send(Message::Transcribe(binding.to_owned(), Box::new(on_status)));
     }
 
     /// `Some(..)` at session start, `None` at the end.
     pub fn set_cancel(&self, binding: Option<&str>) {
-        let _ = self.commands.send(Command::Cancel(binding.map(str::to_owned)));
+        let _ = self.messages.send(Message::Cancel(binding.map(str::to_owned)));
     }
 
     /// Shortcut capture for the settings UI: calls `on_done` once with Some(binding in handy-keys syntax) or None (Esc
     /// / failure). The transcribe shortcut is suspended meanwhile.
     pub fn record(&self, on_done: impl FnOnce(Option<String>) + Send + 'static) {
-        let _ = self.commands.send(Command::Record(Box::new(on_done)));
+        let _ = self.messages.send(Message::Record(Box::new(on_done)));
     }
 
     pub fn stop_recording(&self) {
-        let _ = self.commands.send(Command::StopRecording);
+        let _ = self.messages.send(Message::StopRecording);
     }
 }
 
@@ -110,100 +129,185 @@ pub fn install_udev_rule() -> Result<(), String> {
     Ok(())
 }
 
-fn run(commands: Receiver<Command>, on_event: impl Fn(HotkeyEvent)) {
-    let mut state = State::default();
-    loop {
-        if let Some(manager) = &state.manager {
-            while let Some(event) = manager.try_recv() {
-                let pressed = event.state == HotkeyState::Pressed;
-                if state.transcribe == Some(event.id) {
-                    on_event(HotkeyEvent::Transcribe { pressed });
-                } else if state.cancel == Some(event.id) && pressed {
-                    on_event(HotkeyEvent::Cancel);
+/// Blocks on the channel: commands from [Hotkeys] and key events from the listeners' forwarding threads.
+fn run(messages: Receiver<Message>, forwarders: Sender<Message>, on_event: impl Fn(HotkeyEvent)) {
+    let mut state = State::new(forwarders);
+    while let Ok(message) = messages.recv() {
+        match message {
+            Message::Transcribe(binding, on_status) => on_status(state.register_transcribe(binding)),
+            Message::Cancel(binding) => state.set_cancel(binding),
+            Message::Record(on_done) => state.record(on_done),
+            Message::StopRecording => state.finish_recording(None),
+            Message::Key(None, event) => {
+                for (slot, pressed) in state.matcher.process(&event) {
+                    match slot {
+                        Slot::Transcribe => on_event(HotkeyEvent::Transcribe { pressed }),
+                        Slot::Cancel if pressed => on_event(HotkeyEvent::Cancel),
+                        Slot::Cancel => {}
+                    }
                 }
             }
-        }
-        if let Some(recording) = &mut state.recording {
-            let mut done = None;
-            while let Some(event) = recording.listener.try_recv() {
-                done = recording.capture.on_key(&event);
-                if done.is_some() {
-                    break;
+            Message::Key(Some(id), event) => {
+                let done = match &mut state.recording {
+                    Some(recording) if recording.id == id => recording.capture.on_key(&event),
+                    _ => None,
+                };
+                if let Some(binding) = done {
+                    state.finish_recording(binding);
                 }
             }
-            if let Some(binding) = done {
-                state.finish_recording(binding);
-            }
-        }
-        match commands.recv_timeout(Duration::from_millis(10)) {
-            Ok(Command::Transcribe(binding, response)) => {
-                let _ = response.send(state.register_transcribe(binding));
-            }
-            Ok(Command::Cancel(binding)) => state.set_cancel(binding),
-            Ok(Command::Record(on_done)) => state.record(on_done),
-            Ok(Command::StopRecording) => state.finish_recording(None),
-            Err(RecvTimeoutError::Timeout) => {}
-            Err(RecvTimeoutError::Disconnected) => break,
+            Message::Stop => break,
         }
     }
     state.finish_recording(None);
+    // The shortcut listener's thread ends at its next event; until then its hook blocks nothing.
+    state.blocked().clear();
+}
+
+/// Forwards the shortcut listener's events until the hotkey thread is gone (noticed at the next event).
+fn forward_shortcut_keys(listener: KeyboardListener, messages: Sender<Message>) {
+    while let Ok(event) = listener.recv() {
+        if messages.send(Message::Key(None, event)).is_err() {
+            break;
+        }
+    }
+}
+
+/// Forwards a recording listener's events until the recording ends; checked every 100 ms (only while recording), so
+/// the listener closes soon after.
+fn forward_recording_keys(listener: KeyboardListener, id: u64, ended: Arc<AtomicBool>, messages: Sender<Message>) {
+    while !ended.load(Ordering::SeqCst) {
+        match listener.recv_timeout(Duration::from_millis(100)) {
+            Ok(event) => {
+                if messages.send(Message::Key(Some(id), event)).is_err() {
+                    break;
+                }
+            }
+            Err(Error::Timeout) => {}
+            Err(_) => break,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum Slot {
+    Transcribe,
+    Cancel,
+}
+
+/// handy-keys `ManagerState::process_event` (MIT) for Iris's two shortcuts: a hotkey is pressed when its modifiers
+/// match and its key goes down, and released when its key goes up or, on a modifier event, its modifiers stop matching.
+#[derive(Default)]
+struct Matcher {
+    hotkeys: HashMap<Slot, Hotkey>,
+    pressed: HashSet<Slot>,
+}
+
+impl Matcher {
+    /// The (slot, pressed) changes `event` causes.
+    fn process(&mut self, event: &KeyEvent) -> Vec<(Slot, bool)> {
+        let mut changes = Vec::new();
+        for (&slot, hotkey) in &self.hotkeys {
+            if event.is_key_down {
+                if hotkey.modifiers.matches(event.modifiers) && hotkey.key == event.key && self.pressed.insert(slot) {
+                    changes.push((slot, true));
+                }
+            } else if self.pressed.contains(&slot)
+                && ((event.key.is_some() && hotkey.key == event.key)
+                    || (event.key.is_none() && !hotkey.modifiers.matches(event.modifiers)))
+            {
+                self.pressed.remove(&slot);
+                changes.push((slot, false));
+            }
+        }
+        changes
+    }
 }
 
 struct Recording {
-    listener: KeyboardListener,
+    id: u64,
+    /// Tells the forwarding thread to stop (it then drops the listener).
+    ended: Arc<AtomicBool>,
     capture: Capture,
     on_done: OnDone,
 }
 
-#[derive(Default)]
 struct State {
-    /// Created on the first registration and retried on each one until it works (Linux: after the udev rule).
-    manager: Option<HotkeyManager>,
+    /// For the forwarding threads.
+    messages: Sender<Message>,
+    /// The shortcut listener is running: started on the first registration and retried on each one until it works
+    /// (Linux: after the udev rule).
+    listening: bool,
+    /// The registered hotkeys, which the Windows listener blocks from other apps.
+    blocking: BlockingHotkeys,
+    matcher: Matcher,
     /// Kept to re-register after recording.
     transcribe_binding: String,
-    transcribe: Option<HotkeyId>,
-    cancel: Option<HotkeyId>,
     recording: Option<Recording>,
+    recordings: u64,
 }
 
 impl State {
-    fn register(&mut self, binding: &str) -> Result<HotkeyId, ShortcutStatus> {
+    fn new(messages: Sender<Message>) -> Self {
+        Self {
+            messages,
+            listening: false,
+            blocking: BlockingHotkeys::default(),
+            matcher: Matcher::default(),
+            transcribe_binding: String::new(),
+            recording: None,
+            recordings: 0,
+        }
+    }
+
+    fn blocked(&self) -> std::sync::MutexGuard<'_, HashSet<Hotkey>> {
+        self.blocking.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn register(&mut self, slot: Slot, binding: &str) -> Result<(), ShortcutStatus> {
         let fail = |e: Error| {
             log::warn!("Couldn't register the shortcut {binding:?}: {e}");
             status(&e)
         };
         let hotkey: Hotkey = binding.parse().map_err(fail)?;
-        if self.manager.is_none() {
-            self.manager = Some(new_manager().map_err(fail)?);
+        if !self.listening {
+            let listener = new_listener(&self.blocking).map_err(fail)?;
+            let messages = self.messages.clone();
+            thread::Builder::new()
+                .name("hotkeys-listener".into())
+                .spawn(move || forward_shortcut_keys(listener, messages))
+                .expect("couldn't start the hotkey listener thread");
+            self.listening = true;
         }
-        self.manager.as_ref().expect("set above").register(hotkey).map_err(fail)
+        if self.matcher.hotkeys.values().any(|registered| *registered == hotkey) {
+            return Err(fail(Error::HotkeyAlreadyRegistered(hotkey.to_string())));
+        }
+        self.matcher.hotkeys.insert(slot, hotkey);
+        self.blocked().insert(hotkey);
+        Ok(())
     }
 
-    fn unregister(&self, id: Option<HotkeyId>) {
-        if let (Some(manager), Some(id)) = (&self.manager, id) {
-            let _ = manager.unregister(id);
+    fn unregister(&mut self, slot: Slot) {
+        self.matcher.pressed.remove(&slot);
+        if let Some(hotkey) = self.matcher.hotkeys.remove(&slot) {
+            self.blocked().remove(&hotkey);
         }
     }
 
     fn register_transcribe(&mut self, binding: String) -> ShortcutStatus {
-        let previous = self.transcribe.take();
-        self.unregister(previous);
-        let result = self.register(&binding);
+        self.unregister(Slot::Transcribe);
+        let result = self.register(Slot::Transcribe, &binding);
         self.transcribe_binding = binding;
         match result {
-            Ok(id) => {
-                self.transcribe = Some(id);
-                ShortcutStatus::Registered
-            }
+            Ok(()) => ShortcutStatus::Registered,
             Err(status) => status,
         }
     }
 
     fn set_cancel(&mut self, binding: Option<String>) {
-        let previous = self.cancel.take();
-        self.unregister(previous);
+        self.unregister(Slot::Cancel);
         if let Some(binding) = binding {
-            self.cancel = self.register(&binding).ok();
+            let _ = self.register(Slot::Cancel, &binding);
         }
     }
 
@@ -212,9 +316,15 @@ impl State {
         match KeyboardListener::new() {
             Ok(listener) => {
                 // Suspended so the recorded keys can't start a dictation (Handy's suspend_all_shortcuts).
-                let transcribe = self.transcribe.take();
-                self.unregister(transcribe);
-                self.recording = Some(Recording { listener, capture: Capture::default(), on_done });
+                self.unregister(Slot::Transcribe);
+                self.recordings += 1;
+                let (id, ended, messages) = (self.recordings, Arc::new(AtomicBool::new(false)), self.messages.clone());
+                let thread_ended = ended.clone();
+                thread::Builder::new()
+                    .name("shortcut-recording".into())
+                    .spawn(move || forward_recording_keys(listener, id, thread_ended, messages))
+                    .expect("couldn't start the shortcut recording thread");
+                self.recording = Some(Recording { id, ended, capture: Capture::default(), on_done });
             }
             Err(e) => {
                 log::warn!("Couldn't record a shortcut: {e}");
@@ -224,24 +334,27 @@ impl State {
     }
 
     fn finish_recording(&mut self, binding: Option<String>) {
-        let Some(Recording { listener, on_done, .. }) = self.recording.take() else {
+        let Some(Recording { ended, on_done, .. }) = self.recording.take() else {
             return;
         };
-        drop(listener);
-        if self.transcribe.is_none() && !self.transcribe_binding.is_empty() {
-            self.transcribe = self.register(&self.transcribe_binding.clone()).ok();
+        ended.store(true, Ordering::SeqCst);
+        if !self.matcher.hotkeys.contains_key(&Slot::Transcribe) && !self.transcribe_binding.is_empty() {
+            let _ = self.register(Slot::Transcribe, &self.transcribe_binding.clone());
         }
         on_done(binding);
     }
 }
 
 /// Windows blocks the bound keys from other apps, as Handy; Linux only reads, since blocking would grab the keyboards
-/// and needs `/dev/uinput` (PLAN M2.9).
-fn new_manager() -> handy_keys::Result<HotkeyManager> {
+/// and needs `/dev/uinput`.
+fn new_listener(blocking: &BlockingHotkeys) -> handy_keys::Result<KeyboardListener> {
     #[cfg(windows)]
-    return HotkeyManager::new_with_blocking();
+    return KeyboardListener::new_with_blocking(blocking.clone());
     #[cfg(not(windows))]
-    HotkeyManager::new()
+    {
+        let _ = blocking;
+        KeyboardListener::new()
+    }
 }
 
 fn status(error: &Error) -> ShortcutStatus {
@@ -343,6 +456,34 @@ mod tests {
         assert_eq!(status(&"".parse::<Hotkey>().unwrap_err()), ShortcutStatus::Invalid);
         assert_eq!(status(&Error::HotkeyAlreadyRegistered("ctrl+space".into())), ShortcutStatus::InUse);
         assert_eq!(status(&Error::Platform("permission denied".into())), ShortcutStatus::NoAccess);
+    }
+
+    /// handy-keys `hotkey_press_generates_event`, `no_duplicate_press_events`, `hotkey_release_generates_event`.
+    #[test]
+    fn matcher_presses_once_and_releases_on_key_up() {
+        let mut matcher = Matcher::default();
+        matcher.hotkeys.insert(Slot::Transcribe, "ctrl+space".parse().unwrap());
+
+        let down = key(Modifiers::CTRL_LEFT, Some(Key::Space), true);
+        assert_eq!(matcher.process(&down), vec![(Slot::Transcribe, true)]);
+        assert_eq!(matcher.process(&down), vec![]);
+        assert_eq!(
+            matcher.process(&key(Modifiers::CTRL_LEFT, Some(Key::Space), false)),
+            vec![(Slot::Transcribe, false)]
+        );
+    }
+
+    /// handy-keys `modifier_release_triggers_hotkey_release` and
+    /// `modifier_only_hotkey_not_released_by_unrelated_modifier`.
+    #[test]
+    fn matcher_releases_when_modifiers_stop_matching() {
+        let mut matcher = Matcher::default();
+        matcher.hotkeys.insert(Slot::Cancel, "ctrl".parse().unwrap());
+
+        assert_eq!(matcher.process(&key(Modifiers::CTRL_LEFT, None, true)), vec![(Slot::Cancel, true)]);
+        assert_eq!(matcher.process(&key(Modifiers::CTRL_LEFT | Modifiers::SHIFT_LEFT, None, true)), vec![]);
+        assert_eq!(matcher.process(&key(Modifiers::CTRL_LEFT, None, false)), vec![]);
+        assert_eq!(matcher.process(&key(Modifiers::empty(), None, false)), vec![(Slot::Cancel, false)]);
     }
 
     #[test]

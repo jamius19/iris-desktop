@@ -8,11 +8,15 @@
 //! comes back with `invoke_from_event_loop`.
 
 mod about;
+mod backup;
 mod catalogs;
 mod keys;
 mod post_processing;
+pub mod recovery;
 mod shortcuts;
+mod statistics;
 mod transcription;
+mod update;
 
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -21,16 +25,20 @@ use std::rc::Rc;
 
 use iris_core::copy::{self, SAVE_ERROR};
 use iris_core::settings::{SecretStore, Settings, Store, secrets};
+use iris_core::stt::local::models;
+use iris_core::stt::local::store::StoreState;
 use iris_core::stt::vercel::protocol::gateway_stt_live;
 use iris_core::ui_math::{self, Commit};
 use slint::winit_030::{EventResult, WinitWindowAccessor, winit};
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 use tokio::runtime::Runtime;
 
+use crate::autostart;
 use crate::dictation::Dictation;
 use crate::favicons::Favicons;
 use crate::overlay::OverlayHost;
 use crate::services::{self, ServiceStatus};
+use crate::tray::{self, Tray};
 use crate::{App, CommitResult, Copy, MainWindow, Nav, Placement, Prefs, SelectOption, TextStyle, Type, UiMath};
 
 /// The main-thread state behind the window.
@@ -52,8 +60,12 @@ pub struct AppState {
     pub overlay: OverlayHost,
     /// The settings' model menus.
     pub catalogs: catalogs::Catalogs,
-    /// The on-device (model, language) last warmed up, None while another provider is selected.
+    /// The on-device (model, language) last warmed up, None while another provider is selected or the model isn't
+    /// downloaded.
     pub warmed: Option<(String, String)>,
+    /// None with `--no-tray` (or if it couldn't be created).
+    pub tray: Option<Tray>,
+    pub backup: backup::BackupState,
 }
 
 thread_local! {
@@ -65,16 +77,27 @@ pub fn with_state<R>(f: impl FnOnce(&mut AppState) -> R) -> R {
     STATE.with(|state| f(state.borrow_mut().as_mut().expect("state not set")))
 }
 
-/// Runs the window until it closes; Err if the event loop couldn't start or failed (e.g. no GL for femtovg).
-pub fn run() -> Result<(), slint::PlatformError> {
+/// Runs the app until Quit (without a tray: until the window closes); Err if the event loop couldn't start or failed
+/// (e.g. no GL for femtovg).
+pub fn run(start_hidden: bool, no_tray: bool) -> Result<(), slint::PlatformError> {
     let runtime = Rc::new(
         tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().expect("tokio runtime"),
     );
     let window = MainWindow::new()?;
     let store = Store::open(Store::default_path());
+    // Re-registers a login item whose app moved, removes a stale one.
+    if let Err(e) = autostart::apply(store.settings(&HashSet::new()).launch_at_startup) {
+        log::warn!("Updating the login item failed: {e}");
+    }
     let dictation = Dictation::new(&runtime, store.settings(&HashSet::new()));
     let cancel = dictation.clone();
     let overlay = OverlayHost::new(move || cancel.cancel());
+    let tray = if no_tray {
+        None
+    } else {
+        Tray::new(&window, &dictation).inspect_err(|e| log::warn!("Creating the tray failed: {e}")).ok()
+    };
+    let has_tray = tray.is_some();
     STATE.with(|state| {
         *state.borrow_mut() = Some(AppState {
             window: window.clone_strong(),
@@ -90,6 +113,8 @@ pub fn run() -> Result<(), slint::PlatformError> {
             overlay,
             catalogs: catalogs::Catalogs::default(),
             warmed: None,
+            tray,
+            backup: backup::BackupState::default(),
         })
     });
 
@@ -99,8 +124,12 @@ pub fn run() -> Result<(), slint::PlatformError> {
     post_processing::wire(&window);
     catalogs::wire(&window);
     shortcuts::wire(&window);
+    recovery::wire(&window);
     about::fill(&window);
     services::wire(&window);
+    statistics::wire(&window, &runtime, &dictation);
+    backup::wire(&window);
+    update::wire(&window);
     wire_dictation(&window, &runtime, &dictation);
     with_state(shortcuts::register);
 
@@ -123,15 +152,73 @@ pub fn run() -> Result<(), slint::PlatformError> {
         EventResult::Propagate
     });
 
+    // Closing hides the window to the tray (quits without one); a focused text field commits first.
+    let weak = window.as_weak();
+    window.window().on_close_requested(move || {
+        if let Some(window) = weak.upgrade() {
+            if has_tray && tray::host_present() {
+                window.invoke_focus_root();
+            } else {
+                quit(&window);
+            }
+        }
+        slint::CloseRequestResponse::HideWindow
+    });
+
     with_state(refresh);
     keys::probe_stored();
     services::check();
-    window.run()
+    let host = has_tray && tray::host_present();
+    #[cfg(target_os = "linux")]
+    if has_tray {
+        tray::watch_host(host, || {
+            let _ = slint::invoke_from_event_loop(|| {
+                with_state(|s| {
+                    if let Some(tray) = &mut s.tray {
+                        tray.recreate(&s.window, &s.dictation);
+                    }
+                })
+            });
+        });
+    }
+    if !start_hidden {
+        window.show()?;
+    } else if !has_tray {
+        log::info!("--start-hidden without a tray: showing the window");
+        window.show()?;
+    } else if !host {
+        log::info!("--start-hidden without a tray host (StatusNotifierWatcher): showing the window");
+        window.show()?;
+    }
+    with_state(update::check);
+    slint::run_event_loop_until_quit()
+}
+
+/// Quits after committing a focused text field: its commit is a change handler, which the loop runs at the start of
+/// the iteration that handles the quit.
+pub fn quit(window: &MainWindow) {
+    window.invoke_focus_root();
+    if let Err(e) = slint::quit_event_loop() {
+        log::warn!("Quitting failed: {e}");
+    }
 }
 
 /// (Re)registers the transcribe shortcut.
 pub fn register_shortcut(state: &mut AppState) {
     shortcuts::register(state);
+}
+
+/// A backup restore replaced the settings and API keys: refreshes everything they drive (the pages, the providers'
+/// settings, the stored keys, the shortcut, the model lists, the login item).
+pub fn after_restore(state: &mut AppState) {
+    refresh(state);
+    if let Err(e) = autostart::apply(state.store.settings(&state.stored_secrets).launch_at_startup) {
+        log::warn!("Updating the login item failed: {e}");
+    }
+    catalogs::restored(state);
+    register_shortcut(state);
+    // Its result refreshes again, which reloads the lists of the selected providers.
+    keys::probe(state);
 }
 
 /// Fills every global from the current settings.
@@ -148,18 +235,12 @@ pub fn refresh(state: &mut AppState) {
         settings.panel_width_percent,
         state.window.get_dark(),
     );
+    if let Some(tray) = &state.tray {
+        tray.set_app_dark(state.window.get_dark());
+    }
     state.dictation.settings.send_replace(settings.clone());
     state.dictation.engine.settings_changed();
-    // Android warms the model while the bubble shows; here at start and whenever the model or language changes. Not
-    // with Unload Model "Immediately": it would be unloaded again at once.
-    let selection =
-        settings.stt_on_device().then(|| (settings.on_device_stt_model.clone(), settings.stt_language.clone()));
-    if selection != state.warmed {
-        state.warmed = selection;
-        if state.warmed.is_some() && settings.on_device_unload_minutes != 0 {
-            state.dictation.providers.warm_up_on_device();
-        }
-    }
+    warm_on_device(state, &settings, &downloads);
     let prefs = state.window.global::<Prefs>();
     prefs.set_overlay_position(settings.overlay_position.clone().into());
     prefs.set_panel_lines(settings.panel_lines);
@@ -181,6 +262,21 @@ pub fn refresh(state: &mut AppState) {
     prefs.set_openrouter_key_unreadable(unreadable(secrets::OPENROUTER_API_KEY));
 }
 
+/// Android warms the model while the bubble shows; here at start, whenever the model or language changes, and when the
+/// selected model's download finishes (a model that isn't downloaded isn't warmed). Not with Unload Model
+/// "Immediately": it would be unloaded again at once.
+fn warm_on_device(state: &mut AppState, settings: &Settings, downloads: &StoreState) {
+    let downloaded = downloads.downloaded.contains(models::by_id(&settings.on_device_stt_model).id);
+    let selection = (settings.stt_on_device() && downloaded)
+        .then(|| (settings.on_device_stt_model.clone(), settings.stt_language.clone()));
+    if selection != state.warmed {
+        state.warmed = selection;
+        if state.warmed.is_some() && settings.on_device_unload_minutes != 0 {
+            state.dictation.providers.warm_up_on_device();
+        }
+    }
+}
+
 /// Maps a store write to the control's error text ("" = saved) and refreshes on success.
 pub fn saved(state: &mut AppState, result: io::Result<()>) -> SharedString {
     match result {
@@ -192,6 +288,12 @@ pub fn saved(state: &mut AppState, result: io::Result<()>) -> SharedString {
             log::warn!("Saving a setting failed: {e}");
             SAVE_ERROR.into()
         }
+    }
+}
+
+pub fn open_url(url: &str) {
+    if let Err(e) = open::that_detached(url) {
+        log::warn!("Opening a link failed: {e}");
     }
 }
 
@@ -236,11 +338,7 @@ fn wire_helpers(window: &MainWindow) {
 
     let app = window.global::<App>();
     app.set_version(env!("CARGO_PKG_VERSION").into());
-    app.on_open_url(|url| {
-        if let Err(e) = open::that_detached(url.as_str()) {
-            log::warn!("Opening a link failed: {e}");
-        }
-    });
+    app.on_open_url(|url| open_url(&url));
 
     let weak = window.as_weak();
     window.global::<Nav>().on_focus_root(move || {
@@ -276,7 +374,15 @@ fn set_bool(state: &mut AppState, key: &str, value: bool) -> SharedString {
             None => unreachable!("unknown bool setting {key}"),
         },
     };
-    saved(state, result)
+    let error = saved(state, result);
+    if key == "launch_at_startup"
+        && error.is_empty()
+        && let Err(e) = autostart::apply(value)
+    {
+        log::warn!("Updating the login item failed: {e}");
+        return autostart::ERROR.into();
+    }
+    error
 }
 
 fn set_int(state: &mut AppState, key: &str, value: i32) -> SharedString {
@@ -425,6 +531,7 @@ fn wire_dictation(window: &MainWindow, runtime: &Runtime, dictation: &Dictation)
                 with_state(|s| {
                     let settings = s.store.settings(&s.stored_secrets);
                     transcription::fill(&s.window, &settings, &s.services, &downloads);
+                    warm_on_device(s, &settings, &downloads);
                 })
             });
         }
@@ -467,8 +574,8 @@ fn wire_dictation(window: &MainWindow, runtime: &Runtime, dictation: &Dictation)
     }
 }
 
-/// Shows the window and brings it to the front (another instance was started).
-fn show_window(window: &MainWindow) {
+/// Shows the window and brings it to the front (another instance was started, tray Settings).
+pub fn show_window(window: &MainWindow) {
     if let Err(e) = window.show() {
         log::warn!("Showing the window failed: {e}");
     }

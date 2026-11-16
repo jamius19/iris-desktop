@@ -3,9 +3,9 @@
 * Since: 16/11/2026
 */
 
-//! The overlay through the `iris-overlay` helper next to the executable (PLAN §2.5): spawned on first use, framed
-//! JSON over its stdin/stdout. A writer thread sends; a reader thread posts helper events to the main thread. A
-//! helper that died is respawned once, at the next session. Linux never draws the overlay in-process.
+//! The overlay through the `iris-overlay` helper next to the executable (`docs/architecture.md`, IPC): spawned on first
+//! use, framed JSON over its stdin/stdout. A writer thread sends; a reader thread posts helper events to the main
+//! thread. A helper that died is respawned once, at the next session. Linux never draws the overlay in-process.
 
 use std::cell::{Cell, RefCell};
 use std::io;
