@@ -54,8 +54,12 @@ microphone, paste or screen checks), and there was no real Linux desktop (only W
 - [ ] Overlay states: compact dot + waveform (moves with the voice) + ✕ while listening; the first live text widens
       it smoothly to the Width setting (default 14 % of the screen; timer appears), then the width stays fixed while
       the panel grows up to the Lines setting; the next session starts compact; no flicker or jump of the window;
-      spinner while finalizing; ✓ for 1.5 s; errors and notices for 3 s; clicking a notice dismisses it; "Loading
-      model..." when the first load takes over 2 s; transparent corners without a dark fringe (femtovg).
+      spinner while finalizing; success: no tick and no resize, the card just fades out like an error leaving, and
+      the next session starts as the compact pill; errors (red) and warnings (amber) replace
+      the row's content under the text for 3 s, long ones wrap; clicking one dismisses it, and ✕ is gone meanwhile;
+      "Loading model..." when the first load takes over 2 s; transparent corners without a dark fringe (femtovg); text
+      and ✕ hold still (no shimmer) while the waveform moves; overflowing text fades its top line, no bright strip
+      above it.
 - [ ] Live text streams in the panel for Nemotron and Parakeet Unified; per-phrase models show text phrase by phrase
       (Skip Silence on).
 - [ ] Paste into Notepad, VS Code, a browser field and a terminal (Ctrl+Shift+V) on each platform; clipboard text and

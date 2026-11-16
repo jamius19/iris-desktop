@@ -61,11 +61,13 @@ The helper exits on stdin EOF; it is respawned at most once per session. Mode: l
 `iris-overlay/ui/overlay.slint` is drawn by all three hosts: Windows (in-process winit window, femtovg; ex-styles
 `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW` re-applied on every style change, `WM_MOUSEACTIVATE → MA_NOACTIVATE`), Linux
 layer-shell (Slint software renderer into a `wl_shm` buffer on an SCTK layer surface) and Linux X11 (Slint winit,
-override-redirect). Geometry is pure Rust (`iris-overlay::geometry`, Handy's tests). Sizing (Handy's): a 172 px
+override-redirect). Geometry is pure Rust (`iris-overlay::geometry`, Handy's tests). Sizing (Handy's): a 180 px
 compact pill (dot, waveform, ✕) until a session's first live text, then a card fixed at `wide_width` (the Width
 setting's share of the monitor width, 10–30 %, at least 240 px) until the next session; the panel grows in height
 up to the Lines setting. The window is sized for the wide card once per show and never resizes during a session; the
-card animates inside it and the window region / input shape follows the card.
+card animates inside it and the window region / input shape follows the card. Success fades the card out as it is,
+like an error leaving; an error or warning replaces the control row's content under the live text
+(`docs/decisions.md`).
 
 ## Storage
 | What | Where (`ProjectDirs::from("dev", "jamius", "Iris")`) | Format |

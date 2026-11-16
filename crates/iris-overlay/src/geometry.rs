@@ -13,14 +13,18 @@ pub const TOP_OFFSET: f64 = 4.0;
 pub const BOTTOM_OFFSET: f64 = 40.0;
 
 // Keep in sync with `overlay.slint`.
-const ROW_HEIGHT: f64 = 40.0;
-const PANEL_PADDING: f64 = 12.0;
-/// At least one line of Inter 15 px (about 18.2 px).
-const LINE_HEIGHT: f64 = 20.0;
+const ROW_HEIGHT: f64 = 44.0;
+const PANEL_PADDING: f64 = 16.0;
+/// At least one live-text line: Inter 15 px at a 1.2 line-height factor (22 px).
+const LINE_HEIGHT: f64 = 23.0;
 const NOTICE_MIN_LINES: i32 = 4;
+/// At least one message line: Inter 12.5 px (about 15 px).
+const NOTICE_LINE_HEIGHT: f64 = 16.0;
+/// Above and below a message in the row.
+const NOTICE_PADDING: f64 = 24.0;
 /// Room around the widest card (`overlay.slint` keeps the card 8 px narrower than the window).
 const MARGIN: f64 = 4.0;
-/// The compact pill (172 px) plus room for a few words.
+/// The compact pill (180 px) plus room for a few words.
 const MIN_WIDE_WIDTH: f64 = 240.0;
 
 /// The card's fixed width once live text shows, on a monitor `monitor_width` logical px wide: the Width setting's share
@@ -29,10 +33,13 @@ pub fn wide_width(config: &OverlayConfig, monitor_width: f64) -> f64 {
     (monitor_width * config.width_pct.clamp(10, 30) as f64 / 100.0).floor().max(MIN_WIDE_WIDTH)
 }
 
-/// Overlay window size (logical): the wide card and the tallest panel (notices show at least 4 lines).
+/// Overlay window size (logical): the wide card with a full panel over the tallest row, a message of max(lines, 4)
+/// lines.
 pub fn overlay_size(config: &OverlayConfig, monitor_width: f64) -> (f64, f64) {
-    let lines = config.lines.clamp(1, 6).max(NOTICE_MIN_LINES) as f64;
-    (wide_width(config, monitor_width) + 2.0 * MARGIN, ROW_HEIGHT + PANEL_PADDING + lines * LINE_HEIGHT + MARGIN)
+    let lines = config.lines.clamp(1, 6);
+    let panel = PANEL_PADDING + lines as f64 * LINE_HEIGHT;
+    let row = ROW_HEIGHT.max(NOTICE_PADDING + lines.max(NOTICE_MIN_LINES) as f64 * NOTICE_LINE_HEIGHT);
+    (wide_width(config, monitor_width) + 2.0 * MARGIN, panel + row + MARGIN)
 }
 
 /// Half-open hit test of `point` against a monitor at `origin` with `size`.
@@ -173,13 +180,14 @@ mod tests {
     }
 
     #[test]
-    fn overlay_size_fits_the_wide_card_and_a_four_line_notice() {
+    fn overlay_size_fits_the_wide_card_with_a_panel_over_a_four_line_message() {
+        // Panel 16 + 2 × 23, message row 24 + 4 × 16, margin 4.
         let config = OverlayConfig { lines: 2, ..OverlayConfig::default() };
-        assert_eq!(overlay_size(&config, 1920.0), (276.0, 136.0));
+        assert_eq!(overlay_size(&config, 1920.0), (276.0, 154.0));
         let config = OverlayConfig { width_pct: 30, ..config };
-        assert_eq!(overlay_size(&config, 1920.0), (584.0, 136.0));
-        // Never narrower than the floor; six lines.
+        assert_eq!(overlay_size(&config, 1920.0), (584.0, 154.0));
+        // Never narrower than the floor; six lines of text over six of message.
         let config = OverlayConfig { lines: 6, ..OverlayConfig::default() };
-        assert_eq!(overlay_size(&config, 640.0), (248.0, 176.0));
+        assert_eq!(overlay_size(&config, 640.0), (248.0, 278.0));
     }
 }

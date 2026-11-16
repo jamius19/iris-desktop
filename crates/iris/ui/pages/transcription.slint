@@ -103,6 +103,8 @@ export component TranscriptionPage inherits PageScaffold {
                         style: Type.subtitle;
                         color: Theme.muted;
                         wrap: no-wrap;
+                        // Takes the row's spare width, so the button keeps its own.
+                        horizontal-stretch: 1;
                     }
                     SmallButton {
                         text: "Cancel";

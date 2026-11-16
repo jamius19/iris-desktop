@@ -5,8 +5,8 @@
 
 //! The recording overlay host: maps the dictation state to `OverlayState` and shows, updates or hides the overlay.
 //! Windows draws it in-process (`windows.rs`), Linux through the `iris-overlay` helper (`linux.rs`). Main thread
-//! only. Timings: ✓ 1.5 s, notices and errors 3 s (Android); "Loading model..." after a 2 s load, hide after a 300 ms
-//! fade, smoothed levels and the show-generation counter (Handy).
+//! only. Timings: notices and errors 3 s (Android), success hides at once; "Loading model..." after a 2 s load, hide
+//! after a 300 ms fade, smoothed levels and the show-generation counter (Handy).
 
 #[cfg(target_os = "linux")]
 mod linux;
@@ -25,7 +25,6 @@ use slint::Timer;
 #[cfg(windows)]
 use windows::Overlay;
 
-const DONE_HOLD: Duration = Duration::from_millis(1500);
 const NOTICE_HOLD: Duration = Duration::from_secs(3);
 const SLOW_MODEL_LOAD: Duration = Duration::from_secs(2);
 /// The visualizer's buckets.
@@ -108,17 +107,23 @@ impl OverlayHost {
         }
     }
 
-    /// Listening = dot, waveform, timer and ✕ (+ live text); Finalizing = spinner (+ text); Done = ✓, then hides;
-    /// Done with a notice and Error = the message, then hides; Idle = hide.
+    /// Listening = dot, waveform, timer and ✕ (+ live text); Finalizing = spinner (+ text); Done with a notice
+    /// (warning) and Error = the message in the row under the last live text, then hides; Done and Idle = hide (the
+    /// card fades out as it is).
     pub fn update(&self, state: &DictationState) {
         let inner = &self.inner;
         if *inner.dictation.borrow() == *state {
             return;
         }
         let new_session = !matches!(*inner.dictation.borrow(), DictationState::Listening { .. });
+        // The text shown so far: it stays above a message.
+        let live = match &*inner.dictation.borrow() {
+            DictationState::Listening { text } | DictationState::Finalizing { text } => text.clone(),
+            _ => String::new(),
+        };
         *inner.dictation.borrow_mut() = state.clone();
-        let (phase, text, hold) = match state {
-            DictationState::Idle => {
+        let (phase, text, message, hold) = match state {
+            DictationState::Idle | DictationState::Done { notice: None, .. } => {
                 inner.hide();
                 return;
             }
@@ -127,14 +132,15 @@ impl OverlayHost {
                     inner.session.set(inner.session.get().wrapping_add(1));
                     *inner.levels.borrow_mut() = [0.0; BUCKETS];
                 }
-                (Phase::Listening, text.as_str(), None)
+                (Phase::Listening, text.as_str(), "", None)
             }
-            DictationState::Finalizing { text } => (Phase::Working, text.as_str(), None),
-            DictationState::Done { notice: None, .. } => (Phase::Done, "", Some(DONE_HOLD)),
-            DictationState::Done { notice: Some(notice), .. } => (Phase::Notice, notice.as_str(), Some(NOTICE_HOLD)),
-            DictationState::Error { message } => (Phase::Notice, message.as_str(), Some(NOTICE_HOLD)),
+            DictationState::Finalizing { text } => (Phase::Working, text.as_str(), "", None),
+            DictationState::Done { notice: Some(notice), .. } => {
+                (Phase::Warning, live.as_str(), notice.as_str(), Some(NOTICE_HOLD))
+            }
+            DictationState::Error { message } => (Phase::Error, live.as_str(), message.as_str(), Some(NOTICE_HOLD)),
         };
-        inner.show(phase, text);
+        inner.show(phase, text, message);
         if new_session && phase == Phase::Listening {
             inner.overlay.set_levels(&[0.0; BARS]);
         }
@@ -182,10 +188,11 @@ impl OverlayHost {
 }
 
 impl Inner {
-    fn show(&self, phase: Phase, text: &str) {
+    fn show(&self, phase: Phase, text: &str, message: &str) {
         let state = OverlayState {
             phase,
             text: text.to_owned(),
+            message: message.to_owned(),
             session: self.session.get(),
             loading_model: phase == Phase::Listening && self.loading_slow.get(),
         };
@@ -213,7 +220,7 @@ impl Inner {
     }
 
     fn dismiss_notice(&self) {
-        if self.shown.borrow().as_ref().is_some_and(|state| state.phase == Phase::Notice) {
+        if self.shown.borrow().as_ref().is_some_and(|state| matches!(state.phase, Phase::Error | Phase::Warning)) {
             self.hide();
         }
     }
@@ -223,6 +230,6 @@ impl Inner {
             DictationState::Listening { text } => text.clone(),
             _ => return,
         };
-        self.show(Phase::Listening, &text);
+        self.show(Phase::Listening, &text, "");
     }
 }

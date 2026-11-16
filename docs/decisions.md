@@ -150,6 +150,28 @@ Throwaway code stayed in the session scratch directory; none of it is in the rep
   Android backup resets the Width to 14 % (desktop-only keys aren't in it). Appearance copy: "Max Width" / "Share of
   the screen width the panel can use." → "Width" / "Share of the screen width the panel uses once text appears."
   Changes apply at once, as the other overlay settings.
+- **Overlay card without `clip`**: femtovg draws the children of a rounded `clip: true` element through a layer
+  texture, re-rendered every frame while the waveform moves, and its resampling made the text and ✕ shimmer (measured
+  on Windows at 150 %: 30 versions of a static text crop in 50 frames; 1 without the clip). The children stay inside
+  the card, so it has none. The top fade covers the top visible line once text overflows and while the card resizes
+  over the text (Handy's), instead of an 8 px band above it that showed the hidden line's glyph bottoms as a bright
+  strip; none with Lines = 1. The text area is clipped to what the animating card leaves above the row.
+- **Overlay success and messages** (user request; diverges from Android's green ✓ bubble): success shows no tick and
+  doesn't resize: the host hides at once and the card fades out as it is (wide with text, pill or finalizing circle),
+  the same 250 ms ease-out fade as an error or warning leaving; the window unmaps after 300 ms. Hidden, the card snaps
+  to the compact pill once faded, so the next session starts there instead of morphing from the last shape. An error
+  (14 px red badge, Android's failure colour) or a warning (Done with a notice: amber badge, Handy's dark warning
+  colour #FBBF24, black "!"), centred on the message's first line, replaces the control row's content (dot, waveform,
+  timer, ✕) under the last live text, as Handy's live notice. The row grows to fit the message from its
+  start, up to max(Lines, 4) lines, elided; without a panel the card fits the message up to the wide width (a short
+  one makes it narrower than the pill). The overlay window is sized for a full panel over such a row. Hold times and
+  click-to-dismiss are unchanged; nothing in the row can cancel during a message (✕ is gone, the card's click only
+  dismisses). "Loading model..." stays muted panel text above the listening row, not a row message: recording is
+  still running and the row keeps the waveform and ✕ (Handy shows it the same way).
+- **Overlay spacing** (user request): live text at a 1.2 line-height factor (22 px lines for Inter 15 px, 1.47 × the
+  font; was the natural 18.2 px); the control row 44 px (was 40, so the pill is 180 × 44 with a 22 px radius, was 172
+  × 40); text panel padding 20 px at the sides and 16 px above (was 16 and 12); a message row 12 px above and below
+  (was 10), its text Inter 12.5 px (was 14) from 38 px, 9 px right of a 14 px badge with an 8 px "!" (was 24 and 14).
 - **Dependencies added**: see `docs/third-party.md`. `smithay-client-toolkit` is pinned to 0.19 (winit's copy).
 
 ## M3 decisions

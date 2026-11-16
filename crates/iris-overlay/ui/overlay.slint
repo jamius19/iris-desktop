@@ -6,26 +6,30 @@
 // The recording overlay (`docs/architecture.md`, Overlay): Handy's pill (`RecordingOverlay.tsx`) restyled with Iris's
 // recording surfaces.
 // Black card with white content in both themes (1 px #FFFFFF1F outline in dark mode), Android's state colours and
-// glyphs (`ic_check`, `ic_close`, `ic_exclamation`); the card morphs as Handy's (460 ms, cubic (0.22, 1, 0.36, 1)).
+// glyphs (`ic_close`, `ic_exclamation`); the card morphs as Handy's (460 ms, cubic (0.22, 1, 0.36, 1)).
 // The window is transparent and as wide as the wide card; the card sits flush against the window's screen-edge side
 // and is centred. Rust sets everything through `iris_overlay::apply`; the host sizes the window and sets `wide-width`.
 //
 // Card per mode:
 // - listening: compact pill (red dot | waveform | ✕). The first live text widens it to `wide-width`, fixed for the
 //   rest of the session (`wide`), shows the timer and opens a panel above it (below it at the top).
-// - working: a 40 px circle with a spinner; with text, the panel stays open over a spinner row.
-// - done: the circle fills green from its centre, with a tick.
-// - notice: red badge with "!" and the message, from its start, at least 4 lines, elided. Click dismisses.
+// - working: a 44 px circle with a spinner; with text, the panel stays open over a spinner row.
+// Success hides the card as it is (fade, as an error's); hidden, it snaps back to the compact pill for the next show.
+// - error / warning: a red / amber badge with "!" and `message` replace the row's content (the panel above stays).
+//   The row grows to fit the message, from its start, up to max(lines, 4) lines (fewer under an open panel),
+//   elided; without a panel the card fits the message up to `wide-width`. Click dismisses.
 
 import "../../../assets/fonts/inter.ttf";
 
-export enum OverlayMode { listening, working, done, notice }
+export enum OverlayMode { listening, working, error, warning }
 
 export component OverlayWindow inherits Window {
     in property <OverlayMode> mode;
     in property <bool> shown;
-    // Live text (listening, working) or the notice / error message.
+    // Live text: listening, working, and kept above an error or warning.
     in property <string> text;
+    // The error or warning.
+    in property <string> message;
     in property <bool> loading-model;
     // Changes per listening session: restarts the timer.
     in property <int> session;
@@ -55,31 +59,53 @@ export component OverlayWindow inherits Window {
     default-font-family: "Inter";
 
     property <int> elapsed;
-    property <bool> notice: root.mode == OverlayMode.notice;
+    property <bool> notice: root.mode == OverlayMode.error || root.mode == OverlayMode.warning;
     property <string> panel-text: root.text != "" ? root.text
         : (root.mode == OverlayMode.listening && root.loading-model) ? "Loading model..." : "";
-    property <bool> panel-open: !root.notice && root.mode != OverlayMode.done && root.panel-text != "";
-    property <length> pill-width: 172px;
-    property <length> row-height: 40px;
-    property <length> pad-x: 16px;
+    property <bool> panel-open: root.panel-text != "";
+    property <length> pill-width: 180px;
+    property <length> row-height: 44px;
+    property <length> pad-x: 20px;
+    // Above the text panel.
+    property <length> pad-top: 16px;
+    // Live text lines: 1.2 × Inter's natural 15 px line (about 18.2 px), so about 21.8 px (1.45 × the font size).
+    property <float> line-factor: 1.2;
     property <length> line-height: line-probe.preferred-height;
+    property <length> notice-line: notice-probe.preferred-height;
+    // Where a message starts: 9 px right of its 14 px badge, centred in the row's end cap.
+    property <length> notice-x: 38px;
     // Live text keeps its last `lines` lines; never taller than the window allows.
-    property <length> live-max-height: min(root.lines * root.line-height, root.height - root.row-height - 16px);
+    property <length> live-max-height:
+        min(root.lines * root.line-height, root.height - root.row-height - root.pad-top - 4px);
     property <length> live-height: min(live-text.height, root.live-max-height);
-    // Older lines show faded in this band above the live text (Handy's top fade), only once the text overflows.
-    property <length> fade: live-text.height > root.live-max-height ? 8px : 0px;
-    property <length> notice-max-height: min(max(root.lines, 4) * root.line-height, root.height - 24px);
+    // Once the text overflows, and while the card resizes over it, its top visible line fades out (Handy's top fade),
+    // so a cut line never shows as a bright strip of half glyphs.
+    property <length> fade: root.lines > 1
+        && (live-text.height > root.live-max-height || live-clip.height < root.live-height - 0.5px)
+        ? root.line-height : 0px;
+    property <length> panel-height: root.panel-open ? root.pad-top + root.live-height : 0px;
+    property <length> notice-max-height: max(root.notice-line,
+        min(max(root.lines, 4) * root.notice-line, root.height - 28px - root.panel-height));
+    // The control row; an error or warning grows it to fit the message.
+    property <length> row-h: root.notice ? max(root.row-height, notice-text.height + 24px) : root.row-height;
     property <bool> wide-card: root.panel-open || (root.wide && root.mode == OverlayMode.listening);
-    property <length> target-width: root.notice
-        ? min(root.wide-width, 42px + notice-probe.preferred-width + root.pad-x)
+    // Hidden and faded out: the card is the compact pill, so the next show starts there (not from the last shape).
+    property <bool> parked;
+    property <length> target-width: root.parked ? root.pill-width
+        : root.notice ? (root.panel-open || root.wide ? root.wide-width
+            : min(root.wide-width, root.notice-x + notice-probe.preferred-width + root.pad-x))
         : root.wide-card ? root.wide-width : root.mode == OverlayMode.listening ? root.pill-width : root.row-height;
-    property <length> target-height: root.notice ? max(root.row-height, notice-text.height + 20px)
-        : root.panel-open ? root.row-height + 12px + root.live-height : root.row-height;
+    property <length> target-height: root.parked ? root.row-height : root.row-h + root.panel-height;
     property <length> slide: root.shown ? 0px : 8px;
 
     animate slide { duration: 350ms; easing: cubic-bezier(0.25, 0.1, 0.25, 1); }
 
     changed session => { root.elapsed = 0; }
+    changed shown => {
+        if root.shown {
+            root.parked = false;
+        }
+    }
     changed card-x => { root.card-changed(); }
     changed card-y => { root.card-changed(); }
     changed card-width => { root.card-changed(); }
@@ -91,19 +117,27 @@ export component OverlayWindow inherits Window {
         triggered => { root.elapsed += 1; }
     }
 
+    // Parks once the 250 ms fade is over (the host unmaps the window after 300 ms).
+    Timer {
+        interval: 300ms;
+        running: !root.shown && !root.parked;
+        triggered => { root.parked = true; }
+    }
+
     // Measure text. `elide` keeps their natural width from becoming the window's minimum width.
     line-probe := Text {
         visible: false;
         overflow: elide;
         text: "Ag";
         font-size: 15px;
+        line-height-factor: root.line-factor;
     }
 
     notice-probe := Text {
         visible: false;
         overflow: elide;
-        text: root.text;
-        font-size: 14px;
+        text: root.message;
+        font-size: 12.5px;
         font-weight: 500;
     }
 
@@ -112,28 +146,33 @@ export component OverlayWindow inherits Window {
         height: root.target-height;
         x: (root.width - self.width) / 2;
         y: root.top ? -root.slide : root.height - self.height + root.slide;
-        border-radius: root.target-height > root.row-height ? 16px : 20px;
+        border-radius: root.target-height > root.row-height ? 18px : root.row-height / 2;
         background: #000000;
         border-width: root.dark ? 1px : 0px;
         border-color: #FFFFFF1F;
         opacity: root.shown ? 1 : 0;
-        clip: true;
-        animate width, height, border-radius { duration: 460ms; easing: cubic-bezier(0.22, 1, 0.36, 1); }
+        // No `clip`: femtovg draws a rounded clip's children through a layer texture each frame, which shimmers. The
+        // children stay inside the card.
+        animate width, height, border-radius {
+            duration: root.parked ? 0ms : 460ms;
+            easing: cubic-bezier(0.22, 1, 0.36, 1);
+        }
         animate opacity { duration: 250ms; easing: ease-out; }
 
-        // Notice: the whole card dismisses it.
+        // Error or warning: the whole card dismisses it.
         TouchArea {
             enabled: root.notice;
             mouse-cursor: root.notice ? pointer : default;
             clicked => { root.notice-clicked(); }
         }
 
-        // Live text, newest line at the bottom; older lines fade out under the top edge.
+        // Live text, newest line at the bottom; the top line fades once older lines are hidden. Next to the row and
+        // never taller than the (animating) card leaves room for, so it can't poke out while the card resizes.
         live-clip := Rectangle {
             x: root.pad-x;
-            y: (root.top ? root.row-height : 12px) - root.fade;
+            y: root.top ? root.row-h : card.height - root.row-h - self.height;
             width: card.width - 2 * root.pad-x;
-            height: root.live-height + root.fade;
+            height: max(0px, min(root.live-height, card.height - root.row-h - root.pad-top));
             clip: true;
 
             // The fade sits on the text: opacity on the clipping element breaks its clip in the software renderer.
@@ -144,6 +183,7 @@ export component OverlayWindow inherits Window {
                 text: root.panel-text;
                 wrap: word-wrap;
                 font-size: 15px;
+                line-height-factor: root.line-factor;
                 color: root.text != "" ? #FFFFFF : #FFFFFF99;
                 opacity: root.panel-open ? 1 : 0;
                 animate opacity { duration: 250ms; easing: ease-out; }
@@ -160,33 +200,34 @@ export component OverlayWindow inherits Window {
         }
 
         notice-text := Text {
-            x: 42px;
-            width: max(0px, card.width - 42px - root.pad-x);
+            x: root.notice-x;
+            width: max(0px, card.width - root.notice-x - root.pad-x);
             height: min(self.preferred-height, root.notice-max-height);
-            y: (card.height - self.height) / 2;
-            text: root.notice ? root.text : "";
+            y: row.y + (row.height - self.height) / 2;
+            text: root.notice ? root.message : "";
             wrap: word-wrap;
             overflow: elide;
             vertical-alignment: TextVerticalAlignment.top;
-            font-size: 14px;
+            font-size: 12.5px;
             font-weight: 500;
             color: #FFFFFF;
             opacity: root.notice ? 1 : 0;
             animate opacity { duration: 250ms; easing: cubic-bezier(0.2, 0, 0, 1); }
         }
 
-        // The control row: the 40 px state zone on the left, waveform in the middle, timer and ✕ on the right.
+        // The control row: the 44 px state zone on the left, waveform in the middle, timer and ✕ on the right; an
+        // error or warning replaces all of it.
         row := Rectangle {
             width: card.width;
-            height: root.notice ? card.height : root.row-height;
-            y: root.top || root.notice ? 0 : card.height - self.height;
+            height: root.row-h;
+            y: root.top ? 0 : card.height - self.height;
 
             // Listening: red dot with a pulse ring (Handy's `sdot`).
             if root.mode == OverlayMode.listening: Rectangle {
                 property <float> t: mod(animation-tick() / 1ms, 1900) / 1900;
                 width: 8px + 14px * min(1, self.t / 0.7);
                 height: self.width;
-                x: 20px - self.width / 2;
+                x: (root.row-height - self.width) / 2;
                 y: (parent.height - self.height) / 2;
                 border-radius: self.width / 2;
                 background: #D32F2F.with-alpha(0.35 * max(0, 1 - self.t / 0.7));
@@ -194,7 +235,7 @@ export component OverlayWindow inherits Window {
             Rectangle {
                 width: root.mode == OverlayMode.listening ? 8px : 0px;
                 height: self.width;
-                x: 20px - self.width / 2;
+                x: (root.row-height - self.width) / 2;
                 y: (parent.height - self.height) / 2;
                 border-radius: self.width / 2;
                 background: #D32F2F;
@@ -207,7 +248,7 @@ export component OverlayWindow inherits Window {
                 property <angle> b: self.a + 270deg;
                 width: 16px;
                 height: 16px;
-                x: 12px;
+                x: (root.row-height - self.width) / 2;
                 y: (parent.height - self.height) / 2;
                 viewbox-width: 24;
                 viewbox-height: 24;
@@ -218,51 +259,26 @@ export component OverlayWindow inherits Window {
                 stroke-line-cap: round;
             }
 
-            // Done: green grows from the centre, then the tick grows in from 60 %.
+            // Error: red badge with "!"; warning: amber (Handy's dark warning colour) with a black "!". Centred on the
+            // message's first line.
             Rectangle {
-                width: root.mode == OverlayMode.done ? 40px : 0px;
+                width: root.notice ? 14px : 0px;
                 height: self.width;
-                x: 20px - self.width / 2;
-                y: (parent.height - self.height) / 2;
+                x: (root.row-height - self.width) / 2;
+                y: (parent.height - notice-text.height + root.notice-line - self.height) / 2;
                 border-radius: self.width / 2;
-                background: #33C344;
+                background: root.mode == OverlayMode.warning ? #FBBF24 : #D32F2F;
                 animate width { duration: 250ms; easing: cubic-bezier(0.2, 0, 0, 1); }
             }
             Path {
-                width: root.mode == OverlayMode.done ? 19px : 11px;
+                width: root.notice ? 8px : 5px;
                 height: self.width;
-                x: 20px - self.width / 2;
-                y: (parent.height - self.height) / 2;
-                viewbox-width: 24;
-                viewbox-height: 24;
-                commands: "M4.5,12.5L9,17L19.5,6.5";
-                stroke: #FFFFFF;
-                stroke-width: self.width * 3 / 24;
-                stroke-line-cap: round;
-                stroke-line-join: round;
-                opacity: root.mode == OverlayMode.done ? 1 : 0;
-                animate width, opacity { duration: 250ms; easing: cubic-bezier(0.2, 0, 0, 1); }
-            }
-
-            // Notice: red badge with "!".
-            Rectangle {
-                width: root.notice ? 24px : 0px;
-                height: self.width;
-                x: 20px - self.width / 2;
-                y: (parent.height - self.height) / 2;
-                border-radius: self.width / 2;
-                background: #D32F2F;
-                animate width { duration: 250ms; easing: cubic-bezier(0.2, 0, 0, 1); }
-            }
-            Path {
-                width: root.notice ? 14px : 8px;
-                height: self.width;
-                x: 20px - self.width / 2;
-                y: (parent.height - self.height) / 2;
+                x: (root.row-height - self.width) / 2;
+                y: (parent.height - notice-text.height + root.notice-line - self.height) / 2;
                 viewbox-width: 24;
                 viewbox-height: 24;
                 commands: "M10,3h4v12h-4z M12,19m-2,0a2,2 0,1 1,4 0a2,2 0,1 1,-4 0";
-                fill: #FFFFFF;
+                fill: root.mode == OverlayMode.warning ? #000000 : #FFFFFF;
                 opacity: root.notice ? 1 : 0;
                 animate width, opacity { duration: 250ms; easing: cubic-bezier(0.2, 0, 0, 1); }
             }
@@ -301,8 +317,8 @@ export component OverlayWindow inherits Window {
 
             // ✕ cancels; only while listening (finalizing can't be cancelled).
             cancel := Rectangle {
-                x: parent.width - 9px - 22px;
-                y: 9px;
+                x: parent.width - (root.row-height + self.width) / 2;
+                y: (root.row-height - self.height) / 2;
                 width: 22px;
                 height: 22px;
                 border-radius: 11px;

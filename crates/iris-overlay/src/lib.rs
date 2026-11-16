@@ -29,17 +29,19 @@ pub enum Phase {
     Listening,
     /// Spinner; the panel stays open while there is text.
     Working,
-    /// Tick.
-    Done,
-    /// Badge and message (Done with a notice, or Error); click dismisses.
-    Notice,
+    /// Red badge and `message` in place of the row's content; click dismisses.
+    Error,
+    /// Amber badge and `message` (Done with a notice); click dismisses.
+    Warning,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct OverlayState {
     pub phase: Phase,
-    /// Live text (Listening, Working) or the message (Notice).
+    /// Live text: Listening, Working, and kept above an Error or Warning.
     pub text: String,
+    /// The Error or Warning.
+    pub message: String,
     /// Changes per listening session; restarts the timer.
     pub session: u32,
     /// "Loading model..." in the panel while there is no text yet.
@@ -77,10 +79,11 @@ pub fn apply(window: &OverlayWindow, state: &OverlayState, config: &OverlayConfi
     window.set_mode(match state.phase {
         Phase::Listening => OverlayMode::Listening,
         Phase::Working => OverlayMode::Working,
-        Phase::Done => OverlayMode::Done,
-        Phase::Notice => OverlayMode::Notice,
+        Phase::Error => OverlayMode::Error,
+        Phase::Warning => OverlayMode::Warning,
     });
     window.set_text(state.text.as_str().into());
+    window.set_message(state.message.as_str().into());
     window.set_wide(is_wide(window.get_wide(), window.get_session() == state.session as i32, state));
     window.set_session(state.session as i32);
     window.set_loading_model(state.loading_model);
@@ -92,7 +95,7 @@ pub fn apply(window: &OverlayWindow, state: &OverlayState, config: &OverlayConfi
 
 /// Whether the card is wide: from a session's first live text (or "Loading model...") until the next session.
 fn is_wide(was_wide: bool, same_session: bool, state: &OverlayState) -> bool {
-    (was_wide && same_session) || (state.phase != Phase::Notice && (!state.text.is_empty() || state.loading_model))
+    (was_wide && same_session) || !state.text.is_empty() || state.loading_model
 }
 
 /// Waveform levels, 0..1. Updates the rows in place so the bars animate.
@@ -112,7 +115,7 @@ mod tests {
     use super::*;
 
     fn state(phase: Phase, text: &str, loading_model: bool) -> OverlayState {
-        OverlayState { phase, text: text.into(), session: 1, loading_model }
+        OverlayState { phase, text: text.into(), message: String::new(), session: 1, loading_model }
     }
 
     #[test]
@@ -132,8 +135,14 @@ mod tests {
     }
 
     #[test]
-    fn a_notice_message_is_not_live_text() {
-        assert!(!is_wide(false, true, &state(Phase::Notice, "No microphone", false)));
-        assert!(!is_wide(false, true, &state(Phase::Done, "", false)));
+    fn an_error_message_is_not_live_text() {
+        let error = OverlayState { message: "No microphone".into(), ..state(Phase::Error, "", false) };
+        assert!(!is_wide(false, true, &error));
+        // Live text kept above a warning keeps the card wide.
+        assert!(is_wide(
+            false,
+            true,
+            &OverlayState { message: "Cleanup timeout.".into(), ..state(Phase::Warning, "Hi", false) }
+        ));
     }
 }

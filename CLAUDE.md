@@ -86,6 +86,8 @@ cargo test -p iris -- --ignored --test-threads=1`.
 - Slint: `PopupWindow.show()` takes the focus from the focused item and `close()` gives it back, so a `changed
   has-focus` that opens/closes a popup loops ("long callback/instantiation chain"); see `ModelCombobox.show-list`.
 - Slint: a `FocusScope` above a `TouchArea` takes the first press (to focus itself) unless `focus-on-click: false`.
+- femtovg: `clip: true` with a border radius redraws the children through a layer texture every frame, so static
+  text shimmers next to anything animated; the overlay card has no clip for that reason.
 - Slint 1.18 codegen bug: assigning a `let` string to a property and then comparing it moves it; compare the property.
 - The software renderer drops sub-pixel lines (separators use `1phx`) and doesn't rotate images.
 - The window's own `FocusScope` must hold focus for Esc / Alt+Left; fields hand focus back with `Nav.focus-root()`.

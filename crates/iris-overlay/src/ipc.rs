@@ -98,6 +98,7 @@ mod tests {
             ToHelper::State(OverlayState {
                 phase: Phase::Listening,
                 text: "Grüße, naïve café".into(),
+                message: "Couldn't paste.".into(),
                 session: 3,
                 loading_model: false,
             }),
