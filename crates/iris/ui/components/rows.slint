@@ -115,12 +115,15 @@ export component FieldGroup inherits VerticalLayout {
     @children
     if root.error != "" || root.helper != "" || root.guide.length > 0: VerticalLayout {
         spacing: 2px;
+        // Explicit widths: inside the nested `if`s a wrapped text otherwise gets a one-line height.
         if root.error != "": Label {
+            width: root.width;
             text: root.error;
             style: Type.helper;
             color: Theme.failure;
         }
         if root.helper != "": Label {
+            width: root.width;
             text: root.helper;
             style: Type.helper;
             color: root.helper-color;
