@@ -241,7 +241,7 @@ pub fn refresh(state: &mut AppState) {
     state.overlay.set_config(
         &settings.overlay_position,
         settings.panel_lines,
-        settings.panel_width_percent,
+        settings.overlay_width_percent,
         state.window.get_dark(),
     );
     if let Some(tray) = &state.tray {
@@ -253,7 +253,7 @@ pub fn refresh(state: &mut AppState) {
     let prefs = state.window.global::<Prefs>();
     prefs.set_overlay_position(settings.overlay_position.clone().into());
     prefs.set_panel_lines(settings.panel_lines);
-    prefs.set_panel_width_percent(settings.panel_width_percent);
+    prefs.set_overlay_width_percent(settings.overlay_width_percent);
     prefs.set_paste_method(settings.paste_method.clone().into());
     prefs.set_append_trailing_space(settings.append_trailing_space);
     prefs.set_restore_clipboard(settings.restore_clipboard);
@@ -402,7 +402,7 @@ fn set_int(state: &mut AppState, key: &str, value: i32) -> SharedString {
         "on_device_unload_minutes" => store.set_on_device_unload_minutes(value),
         "cleanup_timeout_seconds" => store.set_cleanup_timeout_seconds(value),
         "panel_lines" => store.set_panel_lines(value),
-        "panel_width_percent" => store.set_panel_width_percent(value),
+        "overlay_width_percent" => store.set_overlay_width_percent(value),
         "paste_delay_ms" => store.set_paste_delay_ms(value),
         "paste_delay_after_ms" => store.set_paste_delay_after_ms(value),
         "feedback_volume_percent" => store.set_feedback_volume_percent(value),

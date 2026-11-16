@@ -13,7 +13,6 @@ pub const TOP_OFFSET: f64 = 4.0;
 pub const BOTTOM_OFFSET: f64 = 40.0;
 
 // Keep in sync with `overlay.slint`.
-const PILL_WIDTH: f64 = 204.0;
 const ROW_HEIGHT: f64 = 40.0;
 const PANEL_PADDING: f64 = 12.0;
 /// At least one line of Inter 15 px (about 18.2 px).
@@ -21,16 +20,19 @@ const LINE_HEIGHT: f64 = 20.0;
 const NOTICE_MIN_LINES: i32 = 4;
 /// Room around the widest card (`overlay.slint` keeps the card 8 px narrower than the window).
 const MARGIN: f64 = 4.0;
+/// The compact pill (172 px) plus room for a few words.
+const MIN_WIDE_WIDTH: f64 = 240.0;
 
-/// The widest card on a monitor `monitor_width` logical px wide: Max Width % of it, at least the pill.
-pub fn max_card_width(config: &OverlayConfig, monitor_width: f64) -> f64 {
-    (monitor_width * config.max_width_pct as f64 / 100.0).max(PILL_WIDTH)
+/// The card's fixed width once live text shows, on a monitor `monitor_width` logical px wide: the Width setting's share
+/// of it (10–30 %) in whole px, at least `MIN_WIDE_WIDTH`. Also the widest notice.
+pub fn wide_width(config: &OverlayConfig, monitor_width: f64) -> f64 {
+    (monitor_width * config.width_pct.clamp(10, 30) as f64 / 100.0).floor().max(MIN_WIDE_WIDTH)
 }
 
-/// Overlay window size (logical): the widest card and the tallest panel (notices show at least 4 lines).
+/// Overlay window size (logical): the wide card and the tallest panel (notices show at least 4 lines).
 pub fn overlay_size(config: &OverlayConfig, monitor_width: f64) -> (f64, f64) {
     let lines = config.lines.clamp(1, 6).max(NOTICE_MIN_LINES) as f64;
-    (max_card_width(config, monitor_width) + 2.0 * MARGIN, ROW_HEIGHT + PANEL_PADDING + lines * LINE_HEIGHT + MARGIN)
+    (wide_width(config, monitor_width) + 2.0 * MARGIN, ROW_HEIGHT + PANEL_PADDING + lines * LINE_HEIGHT + MARGIN)
 }
 
 /// Half-open hit test of `point` against a monitor at `origin` with `size`.
@@ -146,12 +148,38 @@ mod tests {
         assert_eq!(top_y, -195);
     }
 
+    fn width(width_pct: i32) -> OverlayConfig {
+        OverlayConfig { width_pct, ..OverlayConfig::default() }
+    }
+
     #[test]
-    fn overlay_size_fits_the_widest_card_and_a_four_line_notice() {
-        let config = OverlayConfig { lines: 2, max_width_pct: 50, ..OverlayConfig::default() };
-        assert_eq!(overlay_size(&config, 1920.0), (968.0, 136.0));
-        // Never narrower than the pill; six lines.
-        let config = OverlayConfig { lines: 6, max_width_pct: 30, ..OverlayConfig::default() };
-        assert_eq!(overlay_size(&config, 640.0), (212.0, 176.0));
+    fn wide_width_is_the_width_share_of_the_monitor_in_whole_px_with_a_floor() {
+        // The default 14 %, about a seventh.
+        assert_eq!(wide_width(&OverlayConfig::default(), 1920.0), 268.0);
+        assert_eq!(wide_width(&width(14), 2560.0), 358.0);
+        assert_eq!(wide_width(&width(30), 1920.0), 576.0);
+        assert_eq!(wide_width(&width(10), 3840.0), 384.0);
+        // Never narrower than the floor.
+        assert_eq!(wide_width(&width(10), 1920.0), 240.0);
+        assert_eq!(wide_width(&width(14), 1366.0), 240.0);
+        assert_eq!(wide_width(&width(14), 0.0), 240.0);
+    }
+
+    #[test]
+    fn wide_width_clamps_the_share_to_10_to_30_percent() {
+        // A hand-edited or Android-sized value can't make the card half the screen.
+        assert_eq!(wide_width(&width(50), 1920.0), 576.0);
+        assert_eq!(wide_width(&width(0), 3840.0), 384.0);
+    }
+
+    #[test]
+    fn overlay_size_fits_the_wide_card_and_a_four_line_notice() {
+        let config = OverlayConfig { lines: 2, ..OverlayConfig::default() };
+        assert_eq!(overlay_size(&config, 1920.0), (276.0, 136.0));
+        let config = OverlayConfig { width_pct: 30, ..config };
+        assert_eq!(overlay_size(&config, 1920.0), (584.0, 136.0));
+        // Never narrower than the floor; six lines.
+        let config = OverlayConfig { lines: 6, ..OverlayConfig::default() };
+        assert_eq!(overlay_size(&config, 640.0), (248.0, 176.0));
     }
 }

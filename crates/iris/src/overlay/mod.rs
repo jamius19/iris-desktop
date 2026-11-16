@@ -95,9 +95,9 @@ impl OverlayHost {
         Self { inner }
     }
 
-    pub fn set_config(&self, position: &str, lines: i32, max_width_percent: i32, dark: bool) {
+    pub fn set_config(&self, position: &str, lines: i32, width_percent: i32, dark: bool) {
         let position = if position == "top" { Position::Top } else { Position::Bottom };
-        let config = OverlayConfig { position, lines, max_width_pct: max_width_percent, dark };
+        let config = OverlayConfig { position, lines, width_pct: width_percent, dark };
         if *self.inner.config.borrow() == config {
             return;
         }

@@ -140,6 +140,16 @@ Throwaway code stayed in the session scratch directory; none of it is in the rep
   card (Windows window region, X11 input shape); the layer-shell surface spans the output width with the input region
   on the card and uses integer buffer scale only. Windows text scale is 1 (Slint doesn't follow the text-size
   setting). The helper is respawned at most once per session.
+- **Overlay width** (replaces Android's panel that grew with the text up to Max Width): Handy's compact pill, widened
+  once to a fixed width at the session's first live text or "Loading model...", kept until the next session; Handy's
+  morph timing (460 ms, cubic (0.22, 1, 0.36, 1)). The timer shows only on the wide card. Notices hug their text up
+  to the same width. The width is the desktop-only `overlay_width_percent` of the monitor's logical width (default
+  14 %, about a seventh; slider 10–30 % in 1 % steps; floor 240 px; values outside 10–30 are clamped). Android's
+  `panel_width_percent` (30–90 %, default 50) is kept, stored and backed up untouched, but unused on the desktop, so
+  an Android value never sizes the overlay and the desktop never writes a value Android would reject. Restoring an
+  Android backup resets the Width to 14 % (desktop-only keys aren't in it). Appearance copy: "Max Width" / "Share of
+  the screen width the panel can use." → "Width" / "Share of the screen width the panel uses once text appears."
+  Changes apply at once, as the other overlay settings.
 - **Dependencies added**: see `docs/third-party.md`. `smithay-client-toolkit` is pinned to 0.19 (winit's copy).
 
 ## M3 decisions

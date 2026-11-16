@@ -141,10 +141,12 @@ pub struct Settings {
     pub bubble_y_fraction: f32,
     /// Lines of live text the panel shows (its last ones); notices show up to max(this, 4).
     pub panel_lines: i32,
-    /// Panel's max width as a percent of the display width.
+    /// Panel's max width as a percent of the display width. Kept, unused on the desktop (`overlay_width_percent`).
     pub panel_width_percent: i32,
     /// Desktop: the overlay's screen edge, `top` or `bottom`.
     pub overlay_position: String,
+    /// Desktop: the overlay's width once live text shows, as a percent of the display width.
+    pub overlay_width_percent: i32,
     /// Desktop: the capture device id; "" = system default.
     pub microphone_device: String,
     /// Desktop: `auto` (GPU when it works) or `cpu`.
@@ -305,6 +307,9 @@ pub const DEFAULT_PANEL_WIDTH_PERCENT: i32 = 50;
 pub const PANEL_WIDTH_PERCENT_RANGE: RangeInclusive<i32> = 30..=90;
 
 pub const DEFAULT_OVERLAY_POSITION: &str = "bottom";
+/// About a seventh of the display.
+pub const DEFAULT_OVERLAY_WIDTH_PERCENT: i32 = 14;
+pub const OVERLAY_WIDTH_PERCENT_RANGE: RangeInclusive<i32> = 10..=30;
 pub const DEFAULT_LOCAL_ACCELERATOR: &str = "auto";
 #[cfg(windows)]
 pub const DEFAULT_SHORTCUT_TRANSCRIBE: &str = "ctrl+space";
@@ -374,6 +379,7 @@ pub mod keys {
     pub const PANEL_LINES: &str = "panel_lines";
     pub const PANEL_WIDTH_PERCENT: &str = "panel_width_percent";
     pub const OVERLAY_POSITION: &str = "overlay_position";
+    pub const OVERLAY_WIDTH_PERCENT: &str = "overlay_width_percent";
     pub const MICROPHONE_DEVICE: &str = "microphone_device";
     pub const LOCAL_ACCELERATOR: &str = "local_accelerator";
     pub const SHORTCUT_TRANSCRIBE: &str = "shortcut_transcribe";
@@ -516,6 +522,7 @@ pub fn to_settings(values: &Values, stored_secrets: &HashSet<String>) -> Result<
         panel_lines: int(values, keys::PANEL_LINES)?.unwrap_or(DEFAULT_PANEL_LINES),
         panel_width_percent: int(values, keys::PANEL_WIDTH_PERCENT)?.unwrap_or(DEFAULT_PANEL_WIDTH_PERCENT),
         overlay_position: string_or(values, keys::OVERLAY_POSITION, DEFAULT_OVERLAY_POSITION)?,
+        overlay_width_percent: int(values, keys::OVERLAY_WIDTH_PERCENT)?.unwrap_or(DEFAULT_OVERLAY_WIDTH_PERCENT),
         microphone_device: string_or(values, keys::MICROPHONE_DEVICE, "")?,
         local_accelerator: string_or(values, keys::LOCAL_ACCELERATOR, DEFAULT_LOCAL_ACCELERATOR)?,
         shortcut_transcribe: string_or(values, keys::SHORTCUT_TRANSCRIBE, DEFAULT_SHORTCUT_TRANSCRIBE)?,
@@ -756,6 +763,7 @@ mod tests {
         let settings = settings(&Values::new());
 
         assert_eq!("bottom", settings.overlay_position);
+        assert_eq!(14, settings.overlay_width_percent);
         assert_eq!("", settings.microphone_device);
         assert_eq!("auto", settings.local_accelerator);
         assert_eq!(if cfg!(windows) { "ctrl+space" } else { "ctrl+alt+space" }, settings.shortcut_transcribe);

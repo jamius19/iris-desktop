@@ -119,15 +119,21 @@ pub fn register(state: &mut AppState) {
     });
 }
 
-/// A recording finished: saves the binding (None = cancelled).
-fn recorded(state: &mut AppState, key: &str, binding: Option<String>) {
+/// A recording finished: saves the binding (Ok(None) = cancelled; Err = the keyboard can't be read).
+fn recorded(state: &mut AppState, key: &str, binding: Result<Option<String>, ShortcutStatus>) {
     let prefs = state.window.global::<Prefs>();
     prefs.set_recording_shortcut(SharedString::new());
     prefs.set_recording_caps(model(Vec::new()));
     match binding {
-        Some(binding) => save(state, key, &binding),
+        Ok(Some(binding)) => save(state, key, &binding),
         // The transcribe shortcut comes back on after a recording.
-        None => refresh(state),
+        Ok(None) => refresh(state),
+        // Shown on Home's Global Shortcut row, and under the Transcribe field until the next refresh.
+        Err(status) => {
+            state.services.shortcut = Some(status);
+            refresh(state);
+            state.window.global::<Prefs>().set_shortcut_transcribe_error(NO_ACCESS.into());
+        }
     }
 }
 

@@ -61,7 +61,11 @@ The helper exits on stdin EOF; it is respawned at most once per session. Mode: l
 `iris-overlay/ui/overlay.slint` is drawn by all three hosts: Windows (in-process winit window, femtovg; ex-styles
 `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW` re-applied on every style change, `WM_MOUSEACTIVATE → MA_NOACTIVATE`), Linux
 layer-shell (Slint software renderer into a `wl_shm` buffer on an SCTK layer surface) and Linux X11 (Slint winit,
-override-redirect). Geometry is pure Rust (`iris-overlay::geometry`, Handy's tests).
+override-redirect). Geometry is pure Rust (`iris-overlay::geometry`, Handy's tests). Sizing (Handy's): a 172 px
+compact pill (dot, waveform, ✕) until a session's first live text, then a card fixed at `wide_width` (the Width
+setting's share of the monitor width, 10–30 %, at least 240 px) until the next session; the panel grows in height
+up to the Lines setting. The window is sized for the wide card once per show and never resizes during a session; the
+card animates inside it and the window region / input shape follows the card.
 
 ## Storage
 | What | Where (`ProjectDirs::from("dev", "jamius", "Iris")`) | Format |
@@ -78,9 +82,9 @@ override-redirect). Geometry is pure Rust (`iris-overlay::geometry`, Handy's tes
 ### Settings keys
 Android's keys are kept verbatim with the same defaults and validation (`crates/iris-core/src/settings/model.rs`).
 Android-only `bubble_side` / `bubble_y_fraction` are kept and unused. Desktop-only keys (Android keeps them as unknown
-keys): `overlay_position`, `microphone_device`, `local_accelerator`, `shortcut_transcribe`, `shortcut_cancel`,
-`shortcut_activation`, `paste_method`, `append_trailing_space`, `restore_clipboard`, `paste_delay_ms`,
-`paste_delay_after_ms`, `feedback_sounds`, `feedback_volume_percent`, `launch_at_startup`.
+keys): `overlay_position`, `overlay_width_percent`, `microphone_device`, `local_accelerator`, `shortcut_transcribe`,
+`shortcut_cancel`, `shortcut_activation`, `paste_method`, `append_trailing_space`, `restore_clipboard`,
+`paste_delay_ms`, `paste_delay_after_ms`, `feedback_sounds`, `feedback_volume_percent`, `launch_at_startup`.
 
 ### Backup file (`.irisbackup`, identical to Android's)
 `IRISBKUP` (8) · format version 1 (1) · PBKDF2 iterations, u32 big-endian (4) · salt (16) · nonce (12) — this 41-byte

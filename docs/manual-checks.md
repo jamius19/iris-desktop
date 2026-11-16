@@ -51,10 +51,11 @@ microphone, paste or screen checks), and there was no real Linux desktop (only W
 - [ ] Overlay never takes focus (type in an editor while it shows; click ✕ — the editor keeps the caret); top and
       bottom positions; on the monitor with the cursor (Windows, X11); at 100 % / 150 % / 200 % scaling; two monitors
       with different scales.
-- [ ] Overlay states: dot + waveform (moves with the voice) + timer while listening; the live panel grows with the
-      Lines setting and Max Width; spinner while finalizing; ✓ for 1.5 s; errors and notices for 3 s; clicking a
-      notice dismisses it; "Loading model..." when the first load takes over 2 s; transparent corners without a dark
-      fringe (femtovg).
+- [ ] Overlay states: compact dot + waveform (moves with the voice) + ✕ while listening; the first live text widens
+      it smoothly to the Width setting (default 14 % of the screen; timer appears), then the width stays fixed while
+      the panel grows up to the Lines setting; the next session starts compact; no flicker or jump of the window;
+      spinner while finalizing; ✓ for 1.5 s; errors and notices for 3 s; clicking a notice dismisses it; "Loading
+      model..." when the first load takes over 2 s; transparent corners without a dark fringe (femtovg).
 - [ ] Live text streams in the panel for Nemotron and Parakeet Unified; per-phrase models show text phrase by phrase
       (Skip Silence on).
 - [ ] Paste into Notepad, VS Code, a browser field and a terminal (Ctrl+Shift+V) on each platform; clipboard text and

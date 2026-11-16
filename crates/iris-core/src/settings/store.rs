@@ -269,6 +269,7 @@ impl Store {
         self.set(keys::PANEL_LINES, Value::Int(lines))
     }
 
+    /// Kept for parity: the desktop reads `overlay_width_percent` instead.
     pub fn set_panel_width_percent(&mut self, percent: i32) -> io::Result<()> {
         self.set(keys::PANEL_WIDTH_PERCENT, Value::Int(percent))
     }
@@ -325,6 +326,10 @@ impl Store {
 
     pub fn set_overlay_position(&mut self, position: &str) -> io::Result<()> {
         self.set(keys::OVERLAY_POSITION, string(position))
+    }
+
+    pub fn set_overlay_width_percent(&mut self, percent: i32) -> io::Result<()> {
+        self.set(keys::OVERLAY_WIDTH_PERCENT, Value::Int(percent))
     }
 
     pub fn set_microphone_device(&mut self, device: &str) -> io::Result<()> {
@@ -625,6 +630,7 @@ mod tests {
         store.set_open_router_cleanup_reasoning_effort(Some("high")).unwrap();
         store.set_cleanup_provider_options("  {\"a\":1} ").unwrap();
         store.set_paste_delay_ms(120).unwrap();
+        store.set_overlay_width_percent(20).unwrap();
         store.set_launch_at_startup(true).unwrap();
 
         let settings = settings(&Store::open(path));
@@ -636,6 +642,9 @@ mod tests {
         assert_eq!(Some("high"), settings.open_router_cleanup_reasoning_effort.as_deref());
         assert_eq!("{\"a\":1}", settings.cleanup_provider_options);
         assert_eq!(120, settings.paste_delay_ms);
+        assert_eq!(20, settings.overlay_width_percent);
+        // Android's Max Width is left alone.
+        assert_eq!(model::DEFAULT_PANEL_WIDTH_PERCENT, settings.panel_width_percent);
         assert!(settings.launch_at_startup);
     }
 

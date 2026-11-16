@@ -58,14 +58,14 @@ pub struct OverlayConfig {
     pub position: Position,
     /// Live-text lines (notices show at least 4).
     pub lines: i32,
-    /// Share of the monitor width the card can use.
-    pub max_width_pct: i32,
+    /// The card's width once live text shows, as a share of the monitor width (`geometry::wide_width`).
+    pub width_pct: i32,
     pub dark: bool,
 }
 
 impl Default for OverlayConfig {
     fn default() -> Self {
-        Self { position: Position::Bottom, lines: 3, max_width_pct: 50, dark: false }
+        Self { position: Position::Bottom, lines: 3, width_pct: 14, dark: false }
     }
 }
 
@@ -81,12 +81,18 @@ pub fn apply(window: &OverlayWindow, state: &OverlayState, config: &OverlayConfi
         Phase::Notice => OverlayMode::Notice,
     });
     window.set_text(state.text.as_str().into());
+    window.set_wide(is_wide(window.get_wide(), window.get_session() == state.session as i32, state));
     window.set_session(state.session as i32);
     window.set_loading_model(state.loading_model);
     if window.get_levels().row_count() != BARS {
         set_levels(window, &[0.0; BARS]);
     }
     window.set_shown(true);
+}
+
+/// Whether the card is wide: from a session's first live text (or "Loading model...") until the next session.
+fn is_wide(was_wide: bool, same_session: bool, state: &OverlayState) -> bool {
+    (was_wide && same_session) || (state.phase != Phase::Notice && (!state.text.is_empty() || state.loading_model))
 }
 
 /// Waveform levels, 0..1. Updates the rows in place so the bars animate.
@@ -98,5 +104,36 @@ pub fn set_levels(window: &OverlayWindow, levels: &[f32]) {
     }
     for (i, level) in levels.iter().enumerate() {
         model.set_row_data(i, *level);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn state(phase: Phase, text: &str, loading_model: bool) -> OverlayState {
+        OverlayState { phase, text: text.into(), session: 1, loading_model }
+    }
+
+    #[test]
+    fn card_widens_at_the_first_live_text_and_stays_wide_for_the_session() {
+        assert!(!is_wide(false, true, &state(Phase::Listening, "", false)));
+        assert!(is_wide(false, true, &state(Phase::Listening, "Hello", false)));
+        assert!(is_wide(false, true, &state(Phase::Listening, "", true)));
+        assert!(is_wide(false, true, &state(Phase::Working, "Hello", false)));
+        // Text that goes away keeps the width.
+        assert!(is_wide(true, true, &state(Phase::Listening, "", false)));
+    }
+
+    #[test]
+    fn a_new_session_starts_compact() {
+        assert!(!is_wide(true, false, &state(Phase::Listening, "", false)));
+        assert!(is_wide(true, false, &state(Phase::Listening, "Hello", false)));
+    }
+
+    #[test]
+    fn a_notice_message_is_not_live_text() {
+        assert!(!is_wide(false, true, &state(Phase::Notice, "No microphone", false)));
+        assert!(!is_wide(false, true, &state(Phase::Done, "", false)));
     }
 }

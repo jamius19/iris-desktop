@@ -34,7 +34,7 @@ pub enum ShortcutStatus {
     Invalid,
 }
 
-type OnDone = Box<dyn FnOnce(Option<String>) + Send>;
+type OnDone = Box<dyn FnOnce(Result<Option<String>, ShortcutStatus>) + Send>;
 type OnKeys = Box<dyn Fn(String) + Send>;
 type OnStatus = Box<dyn FnOnce(ShortcutStatus) + Send>;
 
@@ -47,6 +47,9 @@ enum Message {
     Key(KeyEvent),
     /// The last [Hotkeys] clone was dropped.
     Stop,
+    /// Tests: key events come from the test, without a listener.
+    #[cfg(test)]
+    NoListener,
 }
 
 /// Handle to the hotkey thread, which stops when the last clone is dropped. Callbacks run on that thread: hand the
@@ -88,12 +91,12 @@ impl Hotkeys {
     }
 
     /// Shortcut capture for the settings UI: calls `on_keys` with the keys held so far whenever they change (handy-keys
-    /// syntax), then `on_done` once with Some(binding) or None (Esc / failure). The transcribe shortcut is suspended
-    /// meanwhile.
+    /// syntax), then `on_done` once with Ok(Some(binding)), Ok(None) (Esc / stopped) or Err(status) when the keyboard
+    /// can't be read. The transcribe shortcut is suspended meanwhile.
     pub fn record(
         &self,
         on_keys: impl Fn(String) + Send + 'static,
-        on_done: impl FnOnce(Option<String>) + Send + 'static,
+        on_done: impl FnOnce(Result<Option<String>, ShortcutStatus>) + Send + 'static,
     ) {
         let _ = self.messages.send(Message::Record(Box::new(on_keys), Box::new(on_done)));
     }
@@ -178,6 +181,8 @@ fn run(messages: Receiver<Message>, forwarders: Sender<Message>, on_event: impl 
                 }
             },
             Message::Stop => break,
+            #[cfg(test)]
+            Message::NoListener => state.listening = true,
         }
     }
     state.finish_recording(None);
@@ -321,7 +326,7 @@ impl State {
         self.finish_recording(None);
         if let Err(e) = self.listen() {
             log::warn!("Couldn't record a shortcut: {e}");
-            on_done(None);
+            on_done(Err(status(&e)));
             return;
         }
         // Suspended so the recorded keys can't start a dictation (Handy's suspend_all_shortcuts); the cancel shortcut
@@ -339,7 +344,7 @@ impl State {
         if !self.matcher.hotkeys.contains_key(&Slot::Transcribe) && !self.transcribe_binding.is_empty() {
             let _ = self.register(Slot::Transcribe, &self.transcribe_binding.clone());
         }
-        on_done(binding);
+        on_done(Ok(binding));
     }
 }
 
@@ -458,10 +463,14 @@ mod tests {
         assert_eq!(capture.partial.as_deref(), Some("ctrl_left+shift_left+k"));
     }
 
-    /// The hotkey thread end to end, with key events as the recording listener forwards them.
+    /// The hotkey thread end to end, with key events as the recording listener forwards them. Windows starts the real
+    /// listener; elsewhere it may not start (no `/dev/input` access, e.g. WSL), so the test stands in for it.
     #[test]
     fn recording_reports_keys_then_the_binding() {
         let hotkeys = Hotkeys::start(|_| {});
+        if cfg!(not(windows)) {
+            hotkeys.messages.send(Message::NoListener).unwrap();
+        }
         let (sender, results) = mpsc::channel();
         let done = sender.clone();
         hotkeys.record(
@@ -483,7 +492,7 @@ mod tests {
                 "keys ctrl_left",
                 "keys ctrl_left+shift_left",
                 "keys ctrl_left+shift_left+k",
-                "done Some(\"ctrl_left+shift_left+k\")"
+                "done Ok(Some(\"ctrl_left+shift_left+k\"))"
             ]
         );
     }

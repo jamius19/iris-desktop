@@ -12,7 +12,7 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use iris_overlay::geometry::{max_card_width, overlay_size, place_on_monitor};
+use iris_overlay::geometry::{overlay_size, place_on_monitor, wide_width};
 use iris_overlay::{BARS, HIDE_DELAY, OverlayConfig, OverlayState, OverlayWindow, apply, set_levels};
 use slint::winit_030::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use slint::winit_030::winit::window::WindowLevel;
@@ -130,7 +130,7 @@ impl Overlay {
     fn place(&self, config: &OverlayConfig) -> (i32, i32, i32, i32) {
         let (origin, size, scale) = cursor_monitor();
         let monitor_width = size.0 as f64 / scale;
-        self.window.set_max_card_width(max_card_width(config, monitor_width) as f32);
+        self.window.set_wide_width(wide_width(config, monitor_width) as f32);
         // Slint doesn't apply Windows' text size setting, so the text scale is 1.
         let bounds = place_on_monitor(origin, size, scale, 1.0, overlay_size(config, monitor_width), config.position);
         let window = self.window.window();

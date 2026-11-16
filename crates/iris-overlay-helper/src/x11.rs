@@ -11,7 +11,7 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use iris_overlay::geometry::{is_within_monitor, max_card_width, overlay_size, place_on_monitor};
+use iris_overlay::geometry::{is_within_monitor, overlay_size, place_on_monitor, wide_width};
 use iris_overlay::ipc::{FromHelper, Mode, ToHelper};
 use iris_overlay::{HIDE_DELAY, OverlayConfig, OverlayState, OverlayWindow, apply, set_levels};
 use slint::winit_030::winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -186,10 +186,10 @@ impl Helper {
                 overlay_size(&config, monitor_width),
                 config.position,
             );
-            Some((bounds, max_card_width(&config, monitor_width)))
+            Some((bounds, wide_width(&config, monitor_width)))
         });
-        let Some(((x, y, width, height), max_width)) = placement.flatten() else { return };
-        self.window.set_max_card_width(max_width as f32);
+        let Some(((x, y, width, height), wide)) = placement.flatten() else { return };
+        self.window.set_wide_width(wide as f32);
         let window = self.window.window();
         window.set_position(PhysicalPosition::new(x, y));
         window.set_size(PhysicalSize::new(width as u32, height as u32));

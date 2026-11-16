@@ -3,7 +3,7 @@
 * Since: 16/11/2026
 */
 
-// Android `ui/settings/AppearancePage.kt` plus the desktop overlay position.
+// Android `ui/settings/AppearancePage.kt` plus the desktop overlay position; Width replaces Android's Max Width.
 
 import { Prefs } from "../globals.slint";
 import { Section, Separator } from "../components/basics.slint";
@@ -36,14 +36,13 @@ export component AppearancePage inherits PageScaffold {
         }
         Separator { }
         SliderGroup {
-            label: "Max Width";
-            subtitle: "Share of the screen width the panel can use.";
-            value: Prefs.panel-width-percent;
-            minimum: 30;
-            maximum: 90;
-            step: 10;
+            label: "Width";
+            subtitle: "Share of the screen width the panel uses once text appears.";
+            value: Prefs.overlay-width-percent;
+            minimum: 10;
+            maximum: 30;
             format: ValueFormat.percent;
-            released(v) => { self.error = Prefs.set-int("panel_width_percent", v); }
+            released(v) => { self.error = Prefs.set-int("overlay_width_percent", v); }
         }
     }
 }

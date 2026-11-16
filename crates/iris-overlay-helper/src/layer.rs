@@ -13,7 +13,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use iris_overlay::geometry::{BOTTOM_OFFSET, TOP_OFFSET, max_card_width, overlay_size};
+use iris_overlay::geometry::{BOTTOM_OFFSET, TOP_OFFSET, overlay_size, wide_width};
 use iris_overlay::ipc::{FromHelper, Mode, ToHelper};
 use iris_overlay::{HIDE_DELAY, OverlayConfig, OverlayState, OverlayWindow, Position, apply, set_levels};
 use slint::platform::software_renderer::{
@@ -236,7 +236,7 @@ impl App {
                     apply(&self.ui, &state, &self.config);
                 }
                 if self.size.0 > 0 {
-                    self.ui.set_max_card_width(max_card_width(&self.config, self.size.0 as f64) as f32);
+                    self.ui.set_wide_width(wide_width(&self.config, self.size.0 as f64) as f32);
                 }
                 if let Some(surface) = &self.surface {
                     configure_layer(surface, &self.config);
@@ -292,7 +292,7 @@ impl App {
         let scale = self.scale.max(1) as u32;
         self.slint_window.dispatch_event(WindowEvent::ScaleFactorChanged { scale_factor: scale as f32 });
         self.slint_window.set_size(PhysicalSize::new(self.size.0 * scale, self.size.1 * scale));
-        self.ui.set_max_card_width(max_card_width(&self.config, self.size.0 as f64) as f32);
+        self.ui.set_wide_width(wide_width(&self.config, self.size.0 as f64) as f32);
         self.slint_window.request_redraw();
     }
 

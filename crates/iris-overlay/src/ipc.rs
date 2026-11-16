@@ -94,7 +94,7 @@ mod tests {
     #[test]
     fn app_messages_round_trip() {
         round_trip(&[
-            ToHelper::Config(OverlayConfig { position: Position::Top, lines: 4, max_width_pct: 70, dark: true }),
+            ToHelper::Config(OverlayConfig { position: Position::Top, lines: 4, width_pct: 20, dark: true }),
             ToHelper::State(OverlayState {
                 phase: Phase::Listening,
                 text: "Grüße, naïve café".into(),

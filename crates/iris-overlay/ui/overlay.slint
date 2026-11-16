@@ -6,13 +6,13 @@
 // The recording overlay (`docs/architecture.md`, Overlay): Handy's pill (`RecordingOverlay.tsx`) restyled with Iris's
 // recording surfaces.
 // Black card with white content in both themes (1 px #FFFFFF1F outline in dark mode), Android's state colours and
-// glyphs (`ic_check`, `ic_close`, `ic_exclamation`), morphs as Android's bubble (250 ms, cubic (0.2, 0, 0, 1)).
-// The window is transparent and larger than the card; the card sits flush against the window's screen-edge side and
-// is centred. Rust sets everything through `iris_overlay::apply`; the host sizes the window and sets
-// `max-card-width`.
+// glyphs (`ic_check`, `ic_close`, `ic_exclamation`); the card morphs as Handy's (460 ms, cubic (0.22, 1, 0.36, 1)).
+// The window is transparent and as wide as the wide card; the card sits flush against the window's screen-edge side
+// and is centred. Rust sets everything through `iris_overlay::apply`; the host sizes the window and sets `wide-width`.
 //
 // Card per mode:
-// - listening: pill (red dot | waveform | timer ✕); live text opens a panel above it (below it at the top).
+// - listening: compact pill (red dot | waveform | ✕). The first live text widens it to `wide-width`, fixed for the
+//   rest of the session (`wide`), shows the timer and opens a panel above it (below it at the top).
 // - working: a 40 px circle with a spinner; with text, the panel stays open over a spinner row.
 // - done: the circle fills green from its centre, with a tick.
 // - notice: red badge with "!" and the message, from its start, at least 4 lines, elided. Click dismisses.
@@ -33,7 +33,10 @@ export component OverlayWindow inherits Window {
     in property <bool> top;
     in property <int> lines: 3;
     in property <bool> dark;
-    in property <length> max-card-width: 400px;
+    // Live text has shown this session (`iris_overlay::apply`): the listening card stays wide.
+    in property <bool> wide;
+    // The wide card's fixed width (`geometry::wide_width`).
+    in property <length> wide-width: 274px;
 
     callback cancel-clicked();
     callback notice-clicked();
@@ -56,7 +59,7 @@ export component OverlayWindow inherits Window {
     property <string> panel-text: root.text != "" ? root.text
         : (root.mode == OverlayMode.listening && root.loading-model) ? "Loading model..." : "";
     property <bool> panel-open: !root.notice && root.mode != OverlayMode.done && root.panel-text != "";
-    property <length> pill-width: 204px;
+    property <length> pill-width: 172px;
     property <length> row-height: 40px;
     property <length> pad-x: 16px;
     property <length> line-height: line-probe.preferred-height;
@@ -66,10 +69,10 @@ export component OverlayWindow inherits Window {
     // Older lines show faded in this band above the live text (Handy's top fade), only once the text overflows.
     property <length> fade: live-text.height > root.live-max-height ? 8px : 0px;
     property <length> notice-max-height: min(max(root.lines, 4) * root.line-height, root.height - 24px);
+    property <bool> wide-card: root.panel-open || (root.wide && root.mode == OverlayMode.listening);
     property <length> target-width: root.notice
-        ? min(root.max-card-width, 42px + notice-probe.preferred-width + root.pad-x)
-        : root.panel-open ? max(root.pill-width, min(root.max-card-width, live-probe.preferred-width + 2 * root.pad-x))
-        : root.mode == OverlayMode.listening ? root.pill-width : root.row-height;
+        ? min(root.wide-width, 42px + notice-probe.preferred-width + root.pad-x)
+        : root.wide-card ? root.wide-width : root.mode == OverlayMode.listening ? root.pill-width : root.row-height;
     property <length> target-height: root.notice ? max(root.row-height, notice-text.height + 20px)
         : root.panel-open ? root.row-height + 12px + root.live-height : root.row-height;
     property <length> slide: root.shown ? 0px : 8px;
@@ -96,13 +99,6 @@ export component OverlayWindow inherits Window {
         font-size: 15px;
     }
 
-    live-probe := Text {
-        visible: false;
-        overflow: elide;
-        text: root.panel-text;
-        font-size: 15px;
-    }
-
     notice-probe := Text {
         visible: false;
         overflow: elide;
@@ -122,7 +118,7 @@ export component OverlayWindow inherits Window {
         border-color: #FFFFFF1F;
         opacity: root.shown ? 1 : 0;
         clip: true;
-        animate width, height, border-radius { duration: 300ms; easing: cubic-bezier(0.2, 0, 0, 1); }
+        animate width, height, border-radius { duration: 460ms; easing: cubic-bezier(0.22, 1, 0.36, 1); }
         animate opacity { duration: 250ms; easing: ease-out; }
 
         // Notice: the whole card dismisses it.
@@ -299,7 +295,7 @@ export component OverlayWindow inherits Window {
                 font-size: 12px;
                 font-weight: 500;
                 color: #FFFFFF80;
-                opacity: root.mode == OverlayMode.listening ? 1 : 0;
+                opacity: root.mode == OverlayMode.listening && root.wide-card ? 1 : 0;
                 animate opacity { duration: 200ms; easing: ease-out; }
             }
 
