@@ -17,48 +17,72 @@ export component AboutPage inherits PageScaffold {
     title: "About Iris";
 
     Card {
-        vertical-padding: 26px;
+        // The badge brings its own 12 px padding.
+        vertical-padding: 8px;
         HorizontalLayout {
-            alignment: start;
-            Image {
-                source: Theme.logo;
-                height: 19px;
-                width: 19px * 865.39 / 153.13;
-                accessible-role: image;
-                accessible-label: "Iris";
+            VerticalLayout {
+                alignment: center;
+                spacing: 14px;
+                HorizontalLayout {
+                    alignment: start;
+                    Image {
+                        source: Theme.logo;
+                        height: 17px;
+                        width: 17px * 865.39 / 153.13;
+                        accessible-role: image;
+                        accessible-label: "Iris";
+                    }
+                }
+                VerticalLayout {
+                    spacing: 7px;
+                    Label {
+                        text: "Version " + App.version;
+                        style: Type.subtitle;
+                    }
+                    Link {
+                        text: "github.com/jamius19/iris-desktop";
+                        clicked => { App.open-url("https://github.com/jamius19/iris-desktop"); }
+                    }
+                    Label {
+                        text: "Iris is open source under the Apache License 2.0.";
+                        style: Type.helper;
+                        color: Theme.muted;
+                    }
+                }
             }
-        }
-        VerticalLayout {
-            spacing: 8px;
-            Label {
-                text: "Version " + App.version;
-                style: Type.subtitle;
-            }
-            Link {
-                text: "github.com/jamius19/iris-desktop";
-                clicked => { App.open-url("https://github.com/jamius19/iris-desktop"); }
-            }
-            Label {
-                text: "Iris is open source under the Apache License 2.0.";
-                style: Type.helper;
-                color: Theme.muted;
-            }
-        }
-    }
-    Section {
-        title: "Built with";
-        // Centred at its width in the narrowest window (it grows with its width).
-        HorizontalLayout {
-            alignment: center;
-            AboutSlint {
-                preferred-width: 380px;
+            // The Slint credit, on the right. The badge is a pill inside Slint's image. A rounded rectangle in the
+            // pill's colour behind the image (inset by the widget's 12 px padding, at the image's 212:97 shape)
+            // squares it off.
+            VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    // The widget's own sizes (padding, spacing, text) aren't ours to scale: 173 px keeps the image
+                    // 149 px wide.
+                    width: 173px;
+                    // Padding, image, spacing, two 10 px text lines, padding.
+                    height: 12px + badge.height + 8px + 26px + 12px;
+                    badge := Rectangle {
+                        x: 12px;
+                        y: 12px;
+                        width: parent.width - 24px;
+                        height: self.width * 97 / 212;
+                        border-radius: 7px;
+                        background: Theme.dark ? white : #151d21;
+                    }
+                    AboutSlint {
+                        x: 0;
+                        y: 0;
+                        width: 100%;
+                        height: 100%;
+                    }
+                }
             }
         }
     }
     Section {
         title: "Licences";
         for licence[index] in App.licences: VerticalLayout {
-            spacing: 15px;
+            spacing: 14px;
             if index > 0: Separator { }
             Accordion {
                 title: licence.title;
@@ -74,8 +98,8 @@ export component AboutPage inherits PageScaffold {
         Accordion {
             title: "Rust libraries";
             ListView {
-                height: 480px;
-                // Clear of the scroll bar.
+                height: 432px;
+                // Clear of the scroll bar (a std widget, so not scaled).
                 for line in App.rust-licences: VerticalLayout {
                     padding-right: 12px;
                     Label {

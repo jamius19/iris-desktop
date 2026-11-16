@@ -28,12 +28,10 @@ export { IrisTray, TrayStatus } from "tray.slint";
 export component MainWindow inherits Window {
     title: "Iris";
     icon: @image-url("../../../assets/icons/app/iris-256.png");
-    // Freely resizable down to the Android design's width; pages centre their column. Slint opens the window at the
-    // preferred size before the 0.9 scale (`ui::UI_SCALE`) applies, so it opens 900 x 800 screen px. The minimum is
-    // repeated in `ui::MIN_SIZE`.
-    min-width: 460px;
-    min-height: 400px;
-    preferred-width: 900px;
+    // Freely resizable; pages centre their column.
+    min-width: 880px;
+    min-height: 360px;
+    preferred-width: 1000px;
     preferred-height: 800px;
     background: Theme.background;
     default-font-family: "Inter";

@@ -21,7 +21,7 @@ component FieldShell inherits Rectangle {
     in property <bool> has-trailing;
     callback clicked();
 
-    min-height: self.multi-line ? 88px : Metrics.control-height;
+    min-height: self.multi-line ? 79px : Metrics.control-height;
     border-radius: Metrics.control-radius;
     border-width: 1px;
     border-color: self.has-error ? Theme.failure : self.focused ? Theme.field-border-focused : Theme.field-border;
@@ -32,8 +32,8 @@ component FieldShell inherits Rectangle {
         clicked => { root.clicked(); }
     }
     HorizontalLayout {
-        padding-left: 12px;
-        padding-right: root.has-trailing ? 6px : 12px;
+        padding-left: 11px;
+        padding-right: root.has-trailing ? 5px : 11px;
         @children
     }
 }
@@ -60,8 +60,8 @@ component Input inherits VerticalLayout {
     }
 
     horizontal-stretch: 1;
-    padding-top: 8px;
-    padding-bottom: 8px;
+    padding-top: 7px;
+    padding-bottom: 7px;
     alignment: self.multi-line ? start : center;
 
     Rectangle {
@@ -188,7 +188,7 @@ export component AutosaveTextField inherits FieldGroup {
             IconAction {
                 icon: Icons.trash;
                 tint: Theme.failure;
-                width: 28px;
+                width: 25px;
                 takes-focus: false;
                 label: "Clear " + root.label;
                 clicked => {
@@ -251,7 +251,7 @@ component SecureKeyShell inherits FieldShell {
         alignment: center;
         IconAction {
             icon: root.visible-input ? Icons.eye-off : Icons.eye;
-            width: 28px;
+            width: 25px;
             takes-focus: false;
             label: root.visible-input ? "Hide " + root.field-label : "Show " + root.field-label;
             clicked => { root.visible-input = !root.visible-input; }
@@ -262,7 +262,7 @@ component SecureKeyShell inherits FieldShell {
         IconAction {
             icon: Icons.trash;
             tint: Theme.failure;
-            width: 28px;
+            width: 25px;
             takes-focus: false;
             label: root.trash-label;
             clicked => { root.trash(); }
@@ -385,7 +385,7 @@ export component DraftTextField inherits FieldGroup {
     }
 
     HorizontalLayout {
-        spacing: 8px;
+        spacing: 7px;
         FieldShell {
             horizontal-stretch: 1;
             focused: input.has-focus;
@@ -403,7 +403,7 @@ export component DraftTextField inherits FieldGroup {
                 IconAction {
                     icon: Icons.trash;
                     tint: Theme.failure;
-                    width: 28px;
+                    width: 25px;
                     takes-focus: false;
                     label: "Clear " + root.label;
                     clicked => {

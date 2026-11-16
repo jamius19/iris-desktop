@@ -18,7 +18,7 @@ component PanelItem inherits Rectangle {
     in property <bool> highlighted;
     callback clicked();
 
-    height: 40px;
+    height: 36px;
     accessible-role: list-item;
     accessible-label: self.option.label;
     accessible-item-selected: self.selected;
@@ -29,9 +29,9 @@ component PanelItem inherits Rectangle {
             : touch.has-hover || root.highlighted ? Theme.hover-overlay-on-control : transparent;
     }
     HorizontalLayout {
-        padding-left: 12px;
-        padding-right: 12px;
-        spacing: 8px;
+        padding-left: 11px;
+        padding-right: 11px;
+        spacing: 7px;
         if root.option.has-icon: VerticalLayout {
             alignment: center;
             ProviderIconBox {
@@ -41,7 +41,7 @@ component PanelItem inherits Rectangle {
         }
         HorizontalLayout {
             horizontal-stretch: 1;
-            spacing: 6px;
+            spacing: 5px;
             alignment: start;
             Label {
                 text: root.option.label;
@@ -55,8 +55,8 @@ component PanelItem inherits Rectangle {
                 Icon {
                     source: Icons.save-check;
                     tint: Theme.on-control;
-                    width: 14px;
-                    height: 14px;
+                    width: 13px;
+                    height: 13px;
                     accessible-role: image;
                     accessible-label: "Downloaded";
                 }
@@ -67,8 +67,8 @@ component PanelItem inherits Rectangle {
             Icon {
                 source: Icons.radio;
                 tint: Theme.on-control.with-alpha(0.7);
-                width: 16px;
-                height: 16px;
+                width: 14px;
+                height: 14px;
                 accessible-role: image;
                 accessible-label: "Streams";
             }
@@ -78,8 +78,8 @@ component PanelItem inherits Rectangle {
             Icon {
                 source: Icons.check;
                 tint: Theme.on-control;
-                width: 16px;
-                height: 16px;
+                width: 14px;
+                height: 14px;
             }
         }
     }
@@ -98,8 +98,8 @@ component ControlShell inherits Rectangle {
     border-width: self.has-error || Theme.dark ? 1px : 0;
     border-color: self.has-error ? Theme.failure : Theme.control-border;
     HorizontalLayout {
-        padding-left: 12px;
-        padding-right: 6px;
+        padding-left: 11px;
+        padding-right: 5px;
         @children
     }
 }
@@ -156,7 +156,7 @@ component Panel inherits PopupWindow {
             border-color: Theme.control-border;
             drop-shadow-color: Theme.panel-shadow;
             drop-shadow-offset-y: 4px;
-            drop-shadow-blur: 12px;
+            drop-shadow-blur: 11px;
             clip: true;
 
             list := Flickable {
@@ -164,13 +164,13 @@ component Panel inherits PopupWindow {
                 // Opens scrolled so the selection has two rows above it, as Android.
                 init => {
                     self.content-y = -max(0, min(rows.preferred-height - self.height,
-                        (UiMath.index-of(root.options, root.selected) - 2) * 40px));
+                        (UiMath.index-of(root.options, root.selected) - 2) * 36px));
                 }
                 function ensure-visible(index: int) {
-                    if index * 40px + 4px < -self.content-y {
-                        self.content-y = -(index * 40px + 4px);
-                    } else if (index + 1) * 40px + 4px > -self.content-y + self.height {
-                        self.content-y = -((index + 1) * 40px + 4px - self.height);
+                    if index * 36px + 4px < -self.content-y {
+                        self.content-y = -(index * 36px + 4px);
+                    } else if (index + 1) * 36px + 4px > -self.content-y + self.height {
+                        self.content-y = -((index + 1) * 36px + 4px - self.height);
                     }
                 }
                 rows := VerticalLayout {
@@ -221,7 +221,7 @@ export component SelectDropdown inherits Rectangle {
     ControlShell {
         has-error: root.has-error;
         if root.current.has-icon: HorizontalLayout {
-            padding-right: 8px;
+            padding-right: 7px;
             VerticalLayout {
                 alignment: center;
                 ProviderIconBox {
@@ -232,7 +232,7 @@ export component SelectDropdown inherits Rectangle {
         }
         HorizontalLayout {
             horizontal-stretch: 1;
-            spacing: 6px;
+            spacing: 5px;
             alignment: start;
             Label {
                 text: root.current.label;
@@ -246,18 +246,18 @@ export component SelectDropdown inherits Rectangle {
                 Icon {
                     source: Icons.save-check;
                     tint: Theme.on-control;
-                    width: 14px;
-                    height: 14px;
+                    width: 13px;
+                    height: 13px;
                 }
             }
         }
         Rectangle {
-            width: 28px;
+            width: 25px;
             Icon {
                 source: Icons.arrow-down;
                 tint: Theme.on-control;
-                width: 16px;
-                height: 16px;
+                width: 14px;
+                height: 14px;
                 transform-rotation: panel.is-open ? 180deg : 0deg;
                 animate transform-rotation { duration: 200ms; }
             }
@@ -298,7 +298,7 @@ export component SelectDropdown inherits Rectangle {
             root.absolute-position.y,
             root.absolute-position.y + root.height,
             Nav.window-height,
-            min(root.options.length * 40px + 8px, 288px)
+            min(root.options.length * 36px + 8px, 260px)
         );
         picked(id) => {
             if id != root.selected {
@@ -483,7 +483,7 @@ export component ModelCombobox inherits FieldGroup {
             IconAction {
                 icon: Icons.arrow-down;
                 tint: Theme.on-control;
-                width: 28px;
+                width: 25px;
                 on-control: true;
                 takes-focus: false;
                 icon-rotation: panel.is-open ? 180deg : 0deg;
@@ -504,7 +504,7 @@ export component ModelCombobox inherits FieldGroup {
             IconAction {
                 icon: Icons.refresh-cw;
                 tint: Theme.on-control;
-                width: 28px;
+                width: 25px;
                 on-control: true;
                 takes-focus: false;
                 enabled: !root.loading;
@@ -532,7 +532,7 @@ export component ModelCombobox inherits FieldGroup {
             shell.absolute-position.y,
             shell.absolute-position.y + shell.height,
             Nav.window-height,
-            min(root.filtered.length * 40px + 8px, 288px)
+            min(root.filtered.length * 36px + 8px, 260px)
         );
         picked(id) => {
             input.text = id;

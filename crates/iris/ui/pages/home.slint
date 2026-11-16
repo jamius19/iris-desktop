@@ -16,10 +16,10 @@ export component HomePage inherits PageScaffold {
     callback open(page: int);
 
     Card {
-        vertical-padding: 15px;
+        vertical-padding: 14px;
         StatusRow {
             icon: Icons.mic;
-            icon-size: 22px;
+            icon-size: 20px;
             icon-top-padding: 2px;
             title: "Microphone";
             ok: Services.microphone-found;
@@ -31,7 +31,7 @@ export component HomePage inherits PageScaffold {
         ServicesDivider { }
         StatusRow {
             icon: Icons.keyboard;
-            icon-size: 22px;
+            icon-size: 20px;
             icon-top-padding: 2px;
             title: "Global Shortcut";
             ok: Services.shortcut-registered;
@@ -43,7 +43,7 @@ export component HomePage inherits PageScaffold {
         if Services.wayland: ServicesDivider { }
         if Services.wayland: StatusRow {
             icon: Icons.clipboard-paste;
-            icon-size: 22px;
+            icon-size: 20px;
             icon-top-padding: 2px;
             title: "Text Input";
             ok: Services.text-input-ready;
@@ -56,14 +56,14 @@ export component HomePage inherits PageScaffold {
     if Services.lost-transcript != "": LostTranscriptCard { }
     NavCard {
         icon: Icons.audio-lines;
-        icon-size: 22px;
+        icon-size: 20px;
         title: "Transcription Settings";
         subtitle: "Set up transcription provider settings";
         clicked => { root.open(1); }
     }
     NavCard {
         icon: Icons.sparkles;
-        icon-size: 23px;
+        icon-size: 21px;
         title: "Post Processing Settings";
         subtitle: "Set up post processing for the transcribed text";
         clicked => { root.open(2); }

@@ -14,12 +14,12 @@ import { SmallButton } from "buttons.slint";
 // A card that opens a page: icon, title, subtitle and an optional note (a warning in the failure colour, SemiBold).
 export component NavCard inherits Card {
     in property <image> icon;
-    in property <length> icon-size: 24px;
+    in property <length> icon-size: 22px;
     in property <string> title;
     in property <string> subtitle;
     in property <string> note;
     in property <bool> note-is-warning;
-    vertical-padding: 15px;
+    vertical-padding: 14px;
     clickable: true;
     button-label: self.title;
 
@@ -55,7 +55,7 @@ export component StatusRow inherits IconRow {
     callback setup();
 
     VerticalLayout {
-        spacing: 12px;
+        spacing: 11px;
         VerticalLayout {
             spacing: 3px;
             Label {
@@ -94,7 +94,7 @@ export component FieldGroup inherits VerticalLayout {
     in property <string> helper;
     in-out property <string> error;
     in property <color> helper-color: Theme.muted;
-    in property <length> gap: 8px;
+    in property <length> gap: 7px;
     in property <[GuideLine]> guide;
     spacing: self.gap;
 
@@ -152,17 +152,17 @@ export component FieldGroup inherits VerticalLayout {
 // The switch itself (the row is the toggle): 34 x 20 track, 16 px thumb, 150 ms.
 component Switch inherits Rectangle {
     in property <bool> checked;
-    width: 34px;
-    height: 20px;
-    border-radius: 10px;
+    width: 31px;
+    height: 18px;
+    border-radius: 9px;
     background: self.checked ? Theme.accent : Theme.track;
     animate background { duration: 150ms; easing: cubic-bezier(0.4, 0, 0.2, 1); }
     Rectangle {
-        x: root.checked ? 16px : 2px;
+        x: root.checked ? 15px : 2px;
         y: 2px;
-        width: 16px;
-        height: 16px;
-        border-radius: 8px;
+        width: 14px;
+        height: 14px;
+        border-radius: 7px;
         background: root.checked ? Theme.switch-thumb-on : Theme.switch-thumb-off;
         animate x, background { duration: 150ms; easing: cubic-bezier(0.4, 0, 0.2, 1); }
     }
@@ -193,18 +193,18 @@ export component SwitchRow inherits Rectangle {
     // Explicit text width: wrapped text inside a horizontal layout otherwise gets a one-line height.
     HorizontalLayout {
         if root.has-icon: VerticalLayout {
-            width: 35px;
+            width: 32px;
             padding-top: 2px;
-            padding-right: 11px;
+            padding-right: 10px;
             alignment: start;
             Icon {
                 source: root.icon;
-                width: 24px;
-                height: 24px;
+                width: 22px;
+                height: 22px;
             }
         }
         VerticalLayout {
-            width: root.width - (root.has-icon ? 35px : 0px) - 46px;
+            width: root.width - (root.has-icon ? 32px : 0px) - 42px;
             spacing: root.has-icon ? 3px : 4px;
             alignment: center;
             Label {
@@ -222,7 +222,7 @@ export component SwitchRow inherits Rectangle {
             }
         }
         VerticalLayout {
-            padding-left: 12px;
+            padding-left: 11px;
             alignment: center;
             Switch {
                 checked: root.checked;
@@ -250,7 +250,7 @@ export component SwitchRow inherits Rectangle {
     if focus.has-focus && root.keyboard-focus: FocusRing {
         width: root.width + 8px;
         height: root.height + 8px;
-        radius: 6px;
+        radius: 5px;
     }
 }
 
@@ -297,10 +297,10 @@ component Slider inherits HorizontalLayout {
         }
     }
 
-    spacing: 12px;
-    min-height: 24px;
+    spacing: 11px;
+    min-height: 22px;
     track := Rectangle {
-        height: 24px;
+        height: 22px;
         horizontal-stretch: 1;
         accessible-role: slider;
         accessible-label: root.label;
@@ -317,7 +317,7 @@ component Slider inherits HorizontalLayout {
             root.commit();
         }
 
-        property <length> travel: 3.5px + (self.width - 7px) * root.fraction;
+        property <length> travel: 3px + (self.width - 6px) * root.fraction;
         Rectangle {
             y: (parent.height - 3px) / 2;
             height: 3px;
@@ -333,10 +333,10 @@ component Slider inherits HorizontalLayout {
             background: Theme.accent;
         }
         Rectangle {
-            property <length> w: touch.pressed || focus.has-focus ? 9px : 7px;
+            property <length> w: touch.pressed || focus.has-focus ? 8px : 6px;
             x: parent.travel - self.w / 2;
             width: self.w;
-            height: 24px;
+            height: 22px;
             border-radius: self.w / 2;
             background: Theme.accent;
             animate w { duration: 150ms; }
@@ -345,7 +345,7 @@ component Slider inherits HorizontalLayout {
             mouse-cursor: pointer;
             function move-to(x: length) {
                 root.position = UiMath.slider-value(
-                    (x - 3.5px) / (track.width - 7px),
+                    (x - 3px) / (track.width - 6px),
                     root.minimum,
                     root.maximum,
                     root.step
@@ -401,7 +401,7 @@ component Slider inherits HorizontalLayout {
         text: root.text-for(root.position);
         style: Type.slider-value;
         horizontal-alignment: right;
-        min-width: 32px;
+        min-width: 29px;
         wrap: no-wrap;
         accessible-role: none;
     }
@@ -441,7 +441,7 @@ export component Accordion inherits VerticalLayout {
         accessible-expanded: root.expanded;
         accessible-action-default => { root.expanded = !root.expanded; }
         HorizontalLayout {
-            spacing: 8px;
+            spacing: 7px;
             VerticalLayout {
                 horizontal-stretch: 1;
                 spacing: 4px;
@@ -458,18 +458,18 @@ export component Accordion inherits VerticalLayout {
                 alignment: center;
                 Icon {
                     source: Icons.chevron-down;
-                    width: 16px;
-                    height: 16px;
+                    width: 14px;
+                    height: 14px;
                     transform-rotation: root.expanded ? 180deg : 0deg;
                     animate transform-rotation { duration: 200ms; }
                 }
             }
         }
         hit := Rectangle {
-            x: -12px;
-            y: -10px;
-            width: parent.width + 24px;
-            height: parent.height + 20px;
+            x: -11px;
+            y: -9px;
+            width: parent.width + 22px;
+            height: parent.height + 18px;
             border-radius: Metrics.control-radius;
             background: touch.pressed ? Theme.press-overlay : touch.has-hover ? Theme.hover-overlay : transparent;
             touch := TouchArea {
@@ -506,7 +506,7 @@ export component Accordion inherits VerticalLayout {
             y: 0;
             height: self.preferred-height;
             alignment: start;
-            padding-top: 15px;
+            padding-top: 14px;
             @children
         }
     }

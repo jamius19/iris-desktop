@@ -56,7 +56,7 @@ component CustomProviderForm inherits VerticalLayout {
         }
     }
 
-    spacing: 15px;
+    spacing: 14px;
     FieldGroup {
         label: "Provider Type";
         SelectDropdown {
@@ -93,9 +93,9 @@ component CustomProviderForm inherits VerticalLayout {
         remove-stored => { root.remove-stored-key = true; }
     }
     VerticalLayout {
-        spacing: 8px;
+        spacing: 7px;
         HorizontalLayout {
-            spacing: 8px;
+            spacing: 7px;
             alignment: start;
             SmallButton {
                 text: "Save";
@@ -156,7 +156,7 @@ export component PostProcessingPage inherits PageScaffold {
     title: "Post Processing Settings";
 
     Card {
-        vertical-padding: 15px;
+        vertical-padding: 14px;
         SwitchRow {
             title: "Remove Filler Words";
             subtitle: "Remove common filler words like uh, um, hmm from the transcript.";
@@ -175,7 +175,7 @@ export component PostProcessingPage inherits PageScaffold {
         clicked => { root.open-custom-words(); }
     }
     Card {
-        vertical-padding: 15px;
+        vertical-padding: 14px;
         SwitchRow {
             title: "AI Cleanup";
             subtitle: "Polish the transcript with an LLM before it's inserted.";
@@ -188,21 +188,21 @@ export component PostProcessingPage inherits PageScaffold {
 
     // Dimmed while cleanup is off, still editable.
     VerticalLayout {
-        spacing: 15px;
+        spacing: 14px;
         opacity: Prefs.cleanup-enabled ? 1 : Metrics.disabled-alpha;
         animate opacity { duration: 150ms; }
 
         Card {
-            vertical-padding: 15px;
+            vertical-padding: 14px;
             IconRow {
                 icon: Icons.cloud;
                 icon-top-padding: 0px;
                 FieldGroup {
                     label: "Post Processing Provider";
-                    gap: 9px;
+                    gap: 8px;
                     error: root.pick-error;
                     HorizontalLayout {
-                        spacing: 8px;
+                        spacing: 7px;
                         SelectDropdown {
                             label: "Post Processing Provider";
                             options: Prefs.cleanup-providers;
@@ -238,7 +238,7 @@ export component PostProcessingPage inherits PageScaffold {
         }
 
         if !root.draft && Prefs.custom-selected: VerticalLayout {
-            spacing: 15px;
+            spacing: 14px;
             Section {
                 title: "Provider Settings";
                 CustomProviderForm {
@@ -293,7 +293,7 @@ export component PostProcessingPage inherits PageScaffold {
         }
 
         if !root.draft && !Prefs.custom-selected && Prefs.cleanup-open-router: VerticalLayout {
-            spacing: 15px;
+            spacing: 14px;
             Section {
                 title: "Provider Settings";
                 ApiKeyField {
@@ -344,7 +344,7 @@ export component PostProcessingPage inherits PageScaffold {
         }
 
         if !root.draft && !Prefs.custom-selected && !Prefs.cleanup-open-router: VerticalLayout {
-            spacing: 15px;
+            spacing: 14px;
             Section {
                 title: "Provider Settings";
                 ApiKeyField {
@@ -399,7 +399,7 @@ export component PostProcessingPage inherits PageScaffold {
                 label: "Active Prompt";
                 helper: "Cleanup uses this prompt.";
                 HorizontalLayout {
-                    spacing: 8px;
+                    spacing: 7px;
                     SelectDropdown {
                         label: "Active Prompt";
                         options: Prefs.prompt-options;

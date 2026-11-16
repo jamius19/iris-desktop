@@ -52,7 +52,7 @@ export component ServicesDivider inherits Rectangle {
 // The card with the design's soft shadow, items 15 px apart. `clickable`: the whole card is one button (hover and
 // press overlays, focus ring, Enter/Space).
 export component Card inherits Rectangle {
-    in property <length> vertical-padding: 16px;
+    in property <length> vertical-padding: 14px;
     in property <color> fill: Theme.card;
     in property <bool> clickable;
     in property <string> button-label;
@@ -66,11 +66,11 @@ export component Card inherits Rectangle {
     drop-shadow-blur: 3px;
 
     VerticalLayout {
-        padding-left: 22px;
-        padding-right: 22px;
+        padding-left: 20px;
+        padding-right: 20px;
         padding-top: root.vertical-padding;
         padding-bottom: root.vertical-padding;
-        spacing: 15px;
+        spacing: 14px;
         @children
     }
 
@@ -112,8 +112,8 @@ export component Card inherits Rectangle {
 // A section heading over one card (14 px extra gap above).
 export component Section inherits VerticalLayout {
     in property <string> title;
-    padding-top: 14px;
-    spacing: 15px;
+    padding-top: 13px;
+    spacing: 14px;
     Label {
         text: root.title;
         style: Type.section-heading;
@@ -127,11 +127,11 @@ export component Section inherits VerticalLayout {
 // Icon column (24 px wide, icon top-padded) 11 px before the content, top aligned.
 export component IconRow inherits HorizontalLayout {
     in property <image> icon;
-    in property <length> icon-size: 24px;
+    in property <length> icon-size: 22px;
     in property <length> icon-top-padding: 2px;
-    spacing: 11px;
+    spacing: 10px;
     VerticalLayout {
-        width: 24px;
+        width: 22px;
         padding-top: root.icon-top-padding;
         alignment: start;
         HorizontalLayout {
@@ -145,7 +145,7 @@ export component IconRow inherits HorizontalLayout {
     }
     // Explicit width: wrapped text inside a horizontal layout otherwise gets a one-line height.
     VerticalLayout {
-        width: root.width - 35px;
+        width: root.width - 32px;
         alignment: start;
         @children
     }
@@ -155,15 +155,15 @@ export component IconRow inherits HorizontalLayout {
 export component ProviderIconBox inherits Rectangle {
     in property <image> icon;
     in property <bool> tint;
-    width: 24px;
-    height: 24px;
+    width: 22px;
+    height: 22px;
     border-radius: 4px;
     border-width: 1px;
     border-color: Theme.on-control.with-alpha(0.3);
     Image {
         source: root.icon;
-        width: 14px;
-        height: 14px;
+        width: 13px;
+        height: 13px;
         image-fit: contain;
         colorize: root.tint ? Theme.on-control : transparent;
         accessible-role: none;
@@ -186,7 +186,7 @@ export component Link inherits Rectangle {
         text: @markdown("<u>\{root.text}</u>");
         default-color: root.text-color;
         default-font-family: "Inter";
-        default-font-size: 12px;
+        default-font-size: 11px;
     }
     touch := TouchArea {
         mouse-cursor: pointer;

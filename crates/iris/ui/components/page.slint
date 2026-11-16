@@ -128,40 +128,40 @@ export component PageScaffold inherits Rectangle {
             height: flick.content-height;
             clicked => { Nav.focus-root(); }
         }
-        // A column at most 660 px wide (about 600 screen px at the window's 0.9 scale), centred.
+        // A column at most 594 px wide, centred.
         layout := VerticalLayout {
-            width: min(flick.width, 660px);
+            width: min(flick.width, 594px);
             x: (flick.width - self.width) / 2;
             min-height: flick.height;
-            padding-left: 18px;
-            padding-right: 18px;
-            // Android's 18 px plus 18 px of desktop room under the title bar.
-            padding-top: 36px;
-            padding-bottom: 28px;
+            padding-left: 16px;
+            padding-right: 16px;
+            // Twice Android's top padding: desktop room under the title bar.
+            padding-top: 32px;
+            padding-bottom: 25px;
             // Content keeps its size; the spacer below takes the extra height (footer pinned to the bottom).
             VerticalLayout {
-                spacing: 15px;
+                spacing: 14px;
                 vertical-stretch: 0;
                 alignment: start;
                 if root.title == "": HorizontalLayout {
                     alignment: start;
-                    padding-left: 7px;
-                    padding-bottom: 7px;
+                    padding-left: 6px;
+                    padding-bottom: 6px;
                     Image {
                         source: Theme.logo;
-                        height: 19px;
-                        width: 19px * 865.39 / 153.13;
+                        height: 17px;
+                        width: 17px * 865.39 / 153.13;
                         accessible-role: image;
                         accessible-label: "Iris";
                     }
                 }
                 if root.title != "": HorizontalLayout {
-                    min-height: 40px;
+                    min-height: 36px;
                     spacing: 2px;
                     alignment: start;
                     IconAction {
                         icon: Icons.chevron-left;
-                        icon-size: 24px;
+                        icon-size: 22px;
                         y: 1px;
                         label: "Back";
                         clicked => { root.back(); }
@@ -175,7 +175,7 @@ export component PageScaffold inherits Rectangle {
                 @children
             }
             Rectangle {
-                min-height: 28px;
+                min-height: 25px;
                 vertical-stretch: 1;
             }
             HorizontalLayout {

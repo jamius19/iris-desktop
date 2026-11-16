@@ -19,14 +19,14 @@ export component TranscriptionPage inherits PageScaffold {
     title: "Transcription Settings";
 
     Card {
-        vertical-padding: 15px;
+        vertical-padding: 14px;
         IconRow {
             icon: Icons.audio-lines;
-            icon-size: 22px;
+            icon-size: 20px;
             icon-top-padding: 0px;
             SelectField {
                 label: "Transcription Provider";
-                gap: 9px;
+                gap: 8px;
                 options: Prefs.stt-providers;
                 selected: Prefs.stt-provider-id;
                 helper: Prefs.stt-provider-note;
@@ -93,7 +93,7 @@ export component TranscriptionPage inherits PageScaffold {
             error: Prefs.download-error;
             helper: Prefs.other-downloading && !Prefs.model-downloaded ? "Another model is downloading." : "";
             if Prefs.model-downloading: VerticalLayout {
-                spacing: 8px;
+                spacing: 7px;
                 ProgressBar {
                     fraction: Prefs.download-fraction;
                 }

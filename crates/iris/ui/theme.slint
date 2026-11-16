@@ -4,7 +4,8 @@
 */
 
 // Design tokens from Android `ui/theme/IrisColors.kt` and `IrisType.kt`. Light = Figma, dark = Android's derived set.
-// Desktop-only tokens: hover overlays and the focus ring. 1 dp = 1 logical px.
+// Desktop-only tokens: hover overlays and the focus ring. Desktop sizes are Android's dp x 0.9 (whole px, fonts to
+// 0.5 px) here and in every component and page; comments quote Android's values.
 
 import "../../../assets/fonts/inter.ttf";
 import "../../../assets/fonts/blinker_semibold.ttf";
@@ -67,26 +68,26 @@ export struct TextStyle {
 }
 
 export global Type {
-    out property <TextStyle> page-title: { family: "Blinker", weight: 600, size: 22px };
-    out property <TextStyle> section-heading: { family: "Blinker", weight: 600, size: 16px };
-    out property <TextStyle> title: { family: "Inter", weight: 600, size: 15px };
-    out property <TextStyle> subtitle: { family: "Inter", weight: 500, size: 13px };
-    out property <TextStyle> button: { family: "Inter", weight: 500, size: 14px };
-    out property <TextStyle> field: { family: "Inter", weight: 400, size: 14px };
+    out property <TextStyle> page-title: { family: "Blinker", weight: 600, size: 20px };
+    out property <TextStyle> section-heading: { family: "Blinker", weight: 600, size: 14.5px };
+    out property <TextStyle> title: { family: "Inter", weight: 600, size: 13.5px };
+    out property <TextStyle> subtitle: { family: "Inter", weight: 500, size: 11.5px };
+    out property <TextStyle> button: { family: "Inter", weight: 500, size: 12.5px };
+    out property <TextStyle> field: { family: "Inter", weight: 400, size: 12.5px };
     // The system monospace font, as Android; Rust sets the family per platform (Slint has no generic family name).
-    in-out property <TextStyle> mono: { family: "monospace", weight: 400, size: 13px };
-    out property <TextStyle> helper: { family: "Inter", weight: 500, size: 12px };
-    out property <TextStyle> helper-bold: { family: "Inter", weight: 600, size: 12px };
-    out property <TextStyle> slider-value: { family: "Inter", weight: 800, size: 13px };
-    out property <TextStyle> menu-item: { family: "Inter", weight: 400, size: 14px };
-    out property <TextStyle> menu-item-selected: { family: "Inter", weight: 500, size: 14px };
-    out property <TextStyle> footer: { family: "Inter", weight: 500, size: 13px };
+    in-out property <TextStyle> mono: { family: "monospace", weight: 400, size: 11.5px };
+    out property <TextStyle> helper: { family: "Inter", weight: 500, size: 11px };
+    out property <TextStyle> helper-bold: { family: "Inter", weight: 600, size: 11px };
+    out property <TextStyle> slider-value: { family: "Inter", weight: 800, size: 11.5px };
+    out property <TextStyle> menu-item: { family: "Inter", weight: 400, size: 12.5px };
+    out property <TextStyle> menu-item-selected: { family: "Inter", weight: 500, size: 12.5px };
+    out property <TextStyle> footer: { family: "Inter", weight: 500, size: 11.5px };
 }
 
 export global Metrics {
-    out property <length> card-radius: 15px;
-    out property <length> control-radius: 8px;
-    out property <length> control-height: 40px;
+    out property <length> card-radius: 14px;
+    out property <length> control-radius: 7px;
+    out property <length> control-height: 36px;
     out property <float> disabled-alpha: 0.38;
 }
 

@@ -44,7 +44,7 @@ component StatLine inherits VerticalLayout {
     accessible-role: text;
     accessible-label: self.stat.title + ": " + self.stat.value;
     HorizontalLayout {
-        spacing: 8px;
+        spacing: 7px;
         Label {
             text: root.stat.title;
             horizontal-stretch: 1;
@@ -107,7 +107,7 @@ export component StatisticsPage inherits PageScaffold {
     for section in Stats.sections: Section {
         title: section.title;
         for row[index] in section.rows: VerticalLayout {
-            spacing: 15px;
+            spacing: 14px;
             if index > 0: Separator { }
             StatLine {
                 stat: row;
@@ -121,8 +121,8 @@ export component StatisticsPage inherits PageScaffold {
     }
     // Spaced from the last section like a section, so they don't read as part of its card.
     if Stats.has-models || Stats.has-cloud || Stats.has-cleanup: VerticalLayout {
-        padding-top: 14px;
-        spacing: 15px;
+        padding-top: 13px;
+        spacing: 14px;
         if Stats.has-models: Label {
             text: "Processing speed compares how long you spoke with how long the model took to transcribe it. At "
                 + "1.5× or more it keeps up. Below 1× the transcription falls behind.";
