@@ -3,7 +3,7 @@
 * Since: 16/11/2026
 */
 
-// Android `ui/settings/PostProcessingPage.kt`, same copy. Model catalogues and refresh come in M3.
+// Android `ui/settings/PostProcessingPage.kt`, same copy.
 
 import { Theme, Type, Metrics, Icons } from "../theme.slint";
 import { Prefs, Copy, Nav, CommitResult, ProviderFormErrors } from "../globals.slint";
@@ -20,6 +20,8 @@ component CustomProviderForm inherits VerticalLayout {
     in property <string> provider-id;
     in property <bool> is-new;
     in property <bool> key-stored;
+    // The keychain couldn't be read, so whether a key is saved is unknown.
+    in property <bool> key-unreadable;
     in property <string> initial-name;
     in property <string> initial-base-url;
     // Bumped to focus the name field again.
@@ -85,6 +87,7 @@ component CustomProviderForm inherits VerticalLayout {
     Separator { }
     key := DraftApiKeyField {
         stored-shown: root.key-shown;
+        unreadable: root.key-unreadable;
         error: root.errors.api-key;
         edited => { root.errors.api-key = ""; }
         remove-stored => { root.remove-stored-key = true; }
@@ -117,11 +120,14 @@ component CustomProviderForm inherits VerticalLayout {
     }
 }
 
-// Reasoning level: "Model default" plus every level the APIs accept (the model's own list needs the M3 catalogue).
+// Reasoning level: "Model default" plus the saved model's efforts from the catalogue, or every level the APIs accept
+// when that's unknown. A saved value the model's known list lacks is flagged (and still sent).
 component ReasoningField inherits SelectField {
     label: "Reasoning Level";
     options: Prefs.reasoning-options;
     helper: "Model default lets the provider decide.";
+    in-out property <string> save-error;
+    error: self.save-error != "" ? self.save-error : Prefs.reasoning-error;
 }
 
 // The "Provider Options" accordion: a JSON text area that autosaves; blank clears, invalid JSON isn't saved.
@@ -238,6 +244,7 @@ export component PostProcessingPage inherits PageScaffold {
                 CustomProviderForm {
                     provider-id: Prefs.custom.id;
                     key-stored: Prefs.custom.key-set;
+                    key-unreadable: Prefs.custom.key-unreadable;
                     initial-name: Prefs.custom.name;
                     initial-base-url: Prefs.custom.base-url;
                 }
@@ -247,6 +254,12 @@ export component PostProcessingPage inherits PageScaffold {
                 ModelCombobox {
                     label: "Cleanup Model";
                     stored: Prefs.custom.model;
+                    models: Prefs.cleanup-catalog.models;
+                    refreshable: Prefs.cleanup-catalog.refreshable;
+                    loaded: Prefs.cleanup-catalog.loaded;
+                    loading: Prefs.cleanup-catalog.loading;
+                    load-error: Prefs.cleanup-catalog.error;
+                    load => { Prefs.load-cleanup-models(); }
                     helper: "Must support structured output while Send JSON Schema is on.";
                     commit(draft) => { return Prefs.commit-text("custom_cleanup_model:" + Prefs.custom.id, draft); }
                 }
@@ -254,7 +267,7 @@ export component PostProcessingPage inherits PageScaffold {
                 ReasoningField {
                     selected: Prefs.custom.reasoning-effort;
                     picked(id) => {
-                        self.error = Prefs.set-string("custom_cleanup_reasoning_effort:" + Prefs.custom.id, id);
+                        self.save-error = Prefs.set-string("custom_cleanup_reasoning_effort:" + Prefs.custom.id, id);
                     }
                 }
                 Separator { }
@@ -285,6 +298,7 @@ export component PostProcessingPage inherits PageScaffold {
                 title: "Provider Settings";
                 ApiKeyField {
                     is-set: Prefs.openrouter-key-set;
+                    unreadable: Prefs.openrouter-key-unreadable;
                     placeholder: "sk-or-…";
                     set-helper: Copy.api-key-helper(true, "");
                     unset-helper: Copy.api-key-helper(false, "");
@@ -296,13 +310,19 @@ export component PostProcessingPage inherits PageScaffold {
                 ModelCombobox {
                     label: "Cleanup Model";
                     stored: Prefs.open-router-cleanup-model;
+                    models: Prefs.cleanup-catalog.models;
+                    refreshable: Prefs.cleanup-catalog.refreshable;
+                    loaded: Prefs.cleanup-catalog.loaded;
+                    loading: Prefs.cleanup-catalog.loading;
+                    load-error: Prefs.cleanup-catalog.error;
+                    load => { Prefs.load-cleanup-models(); }
                     helper: "Model must support structured output.";
                     commit(draft) => { return Prefs.commit-text("openrouter_cleanup_model", draft); }
                 }
                 Separator { }
                 ReasoningField {
                     selected: Prefs.open-router-cleanup-reasoning-effort;
-                    picked(id) => { self.error = Prefs.set-string("openrouter_cleanup_reasoning_effort", id); }
+                    picked(id) => { self.save-error = Prefs.set-string("openrouter_cleanup_reasoning_effort", id); }
                 }
                 Separator { }
                 SliderGroup {
@@ -329,6 +349,7 @@ export component PostProcessingPage inherits PageScaffold {
                 title: "Provider Settings";
                 ApiKeyField {
                     is-set: Prefs.gateway-key-set;
+                    unreadable: Prefs.gateway-key-unreadable;
                     set-helper: Copy.api-key-helper(true, "transcription");
                     unset-helper: Copy.api-key-helper(false, "transcription");
                     name: "gateway_api_key";
@@ -339,13 +360,19 @@ export component PostProcessingPage inherits PageScaffold {
                 ModelCombobox {
                     label: "Cleanup Model";
                     stored: Prefs.cleanup-model;
+                    models: Prefs.cleanup-catalog.models;
+                    refreshable: Prefs.cleanup-catalog.refreshable;
+                    loaded: Prefs.cleanup-catalog.loaded;
+                    loading: Prefs.cleanup-catalog.loading;
+                    load-error: Prefs.cleanup-catalog.error;
+                    load => { Prefs.load-cleanup-models(); }
                     helper: "Model must support structured output.";
                     commit(draft) => { return Prefs.commit-text("cleanup_model", draft); }
                 }
                 Separator { }
                 ReasoningField {
                     selected: Prefs.cleanup-reasoning-effort;
-                    picked(id) => { self.error = Prefs.set-string("cleanup_reasoning_effort", id); }
+                    picked(id) => { self.save-error = Prefs.set-string("cleanup_reasoning_effort", id); }
                 }
                 Separator { }
                 SliderGroup {

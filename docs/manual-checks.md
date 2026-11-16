@@ -90,8 +90,6 @@ microphone, paste or screen checks), and there was no real Linux desktop (only W
 - [ ] Linux helper: layer-shell mode on KDE and Sway/Hyprland (no focus, clicks reach ✕), X11 mode on GNOME
       (XWayland) and on an X11 session.
 - [ ] Skip Silence on/off and Speed 1.5× with a per-phrase model; silence only → "No speech detected".
-- [ ] Picking a cloud provider: a dictation ends with "Cloud providers aren't available yet. Pick On device." (M2
-      only).
 - [ ] The `#[ignore]` engine and VAD tests, on Windows and Linux, after `cargo build -p iris` (a debug worker: fault
       injection is compiled out of release): `IRIS_TRANSCRIBE_WORKER_EXE=target/debug/iris IRIS_TEST_MODEL=<streaming
       gguf> IRIS_TEST_WAV=<16 kHz mono wav> cargo test -p iris -- --ignored --nocapture --test-threads=1` (the
@@ -100,3 +98,37 @@ microphone, paste or screen checks), and there was no real Linux desktop (only W
 Checked by the implementer on 16/11/2026: `iris -f` through the real worker on Windows (Vulkan, RTX 3050): Parakeet
 TDT v3 and Nemotron Streaming English both returned the exact sentence, also on a WAV cut right after the last word
 (no tail padding needed). See the M2 report for WSL results.
+
+## M3 – Cloud speech-to-text and LLM cleanup
+Nothing here was checked by the implementer: there are no API keys on the development machine and the desktop was
+locked. The providers pass their ported tests against local mock servers only; the two public catalogues (Vercel AI
+Gateway, OpenRouter) were fetched once and parse. Each item needs a real key for the provider.
+- [ ] OpenAI: `gpt-live-transcribe` (live text), `gpt-4o-mini-transcribe` (Realtime, text after stop) and an upload
+      model (an id from the model menu that isn't in the Realtime list); language set and blank; Custom Words on
+      (`keywords` for gpt-(live-)transcribe, a prompt for whisper-1 / gpt-4o(-mini)-transcribe).
+- [ ] Vercel AI Gateway: a live model (`openai/gpt-live-transcribe`) and a non-live one (`openai/whisper-1`); the
+      model menu marks live models; picking one stores live or upload (live text only for live ones).
+- [ ] Deepgram: `nova-3` live and with "Disable Realtime Streaming"; Custom Words (keyterms) on with Nova-3; language
+      blank (multi) and `de`.
+- [ ] Soniox: `stt-rt-v6` live and an async model; a US key in the US region, an EU key in the EU region (and the
+      error with a US key in EU); Language Codes "en, de"; the model menu loads after the key is saved and after a
+      region change.
+- [ ] Speed 1.5× and 2.0× on a live and an upload model per provider (not Soniox real-time: hidden there).
+- [ ] Skip Silence: a 10 s pause is dropped (log `VAD: sent X ms of Y ms`); silence only → "No speech detected"; a
+      pause over 30 s with a live model keeps the socket (keep-alive zeros, pings).
+- [ ] Cleanup with Vercel AI Gateway, OpenRouter and a custom provider (Send JSON Schema on and off; a model that
+      thinks out loud has its `<think>` block stripped); Reasoning Level options follow the model (an unlisted saved
+      level shows "Not listed for this model"); Provider Options are sent.
+- [ ] Cleanup Timeout 1 s with a slow model: "Cleanup timeout. Pasted original text." and the original is pasted.
+- [ ] Wrong key, no credit / quota, unknown model: each provider's message shows in the overlay (speech-to-text) or
+      as the cleanup notice with "Inserted the original text"; no key → "Add your … API key in Iris settings".
+- [ ] Model menus: the refresh button spins (femtovg) while loading and reloads; the first open of an unloaded menu
+      loads it; load errors show under the field; OpenAI's list reloads after its key changes; a custom provider's
+      list reloads after Save.
+- [ ] Keychain locked or unavailable (Linux without a Secret Service): the API key fields (including a saved custom
+      cleanup provider's) say "Couldn't read the keychain." and a dictation with a cloud provider shows the same.
+- [ ] Filler words: "um, so, uh, I think" with Language blank (English detected) and set to `de` ("äh").
+- [ ] On device: after picking another downloaded model, the worker loads it within seconds without a dictation
+      (warm-up); cancelling (Esc) during a per-phrase decode stops the worker and the next dictation reloads it.
+- [ ] Network drop mid-dictation (disable Wi-Fi): a readable "Network error: …" (Gateway: one reconnect first),
+      never a hang past the timeouts.

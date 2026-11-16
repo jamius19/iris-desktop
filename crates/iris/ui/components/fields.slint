@@ -277,12 +277,14 @@ export component ApiKeyField inherits FieldGroup {
     in property <string> placeholder: "Paste your API key";
     in property <string> set-helper;
     in property <string> unset-helper;
+    // The keychain couldn't be read, so whether a key is saved is unknown.
+    in property <bool> unreadable;
     in property <string> name;
     property <string> op-error;
     property <int> op-seq: Prefs.key-op-seq;
 
     label: "API Key";
-    helper: self.is-set ? self.set-helper : self.unset-helper;
+    helper: self.is-set ? self.set-helper : self.unreadable ? "Couldn't read the keychain." : self.unset-helper;
     helper-color: self.is-set ? Theme.muted : Theme.failure;
     error: self.op-error;
 
@@ -320,12 +322,16 @@ export component ApiKeyField inherits FieldGroup {
 // clears the input, or without input marks the stored key for removal.
 export component DraftApiKeyField inherits FieldGroup {
     in property <bool> stored-shown;
+    // The keychain couldn't be read, so whether a key is saved is unknown.
+    in property <bool> unreadable;
     in-out property <string> text <=> shell.text;
     callback remove-stored();
     callback edited();
 
     label: "API Key";
-    helper: self.stored-shown ? "API key saved. Enter a new one to replace it." : "Not set";
+    helper: self.stored-shown
+        ? "API key saved. Enter a new one to replace it."
+        : self.unreadable ? "Couldn't read the keychain." : "Not set";
     helper-color: self.stored-shown ? Theme.muted : Theme.failure;
 
     changed text => { self.edited(); }

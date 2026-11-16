@@ -62,6 +62,8 @@ pub struct OnDeviceSpeechToText {
     pub stream: Stream,
     /// The stored (model id, language), for [`warm_up`](SpeechToTextProvider::warm_up).
     pub selection: Box<dyn Fn() -> (String, String) + Send + Sync>,
+    /// Stops the engine's decode in flight: a per-phrase session dropped (cancelled) or failed before its text.
+    pub cancel: Box<dyn Fn() + Send + Sync>,
     pub max_segment_bytes: usize,
 }
 
@@ -123,6 +125,8 @@ impl OnDeviceSpeechToText {
         language: String,
         on_partial: Arc<dyn Fn(String) + Send + Sync>,
     ) -> Result<String, SttError> {
+        // A session that ends without its text (cancelled, failed, timed out) stops a decode still running for it.
+        let mut cancel = CancelOnDrop(Some(&*self.cancel));
         let (segments, mut queued) = mpsc::unbounded_channel::<Vec<Vec<u8>>>();
         // Queued and buffered audio not decoded yet, for the deadline after the stop.
         let pending = Arc::new(AtomicU64::new(0));
@@ -179,6 +183,7 @@ impl OnDeviceSpeechToText {
         queue(buffer);
         drop(segments);
         let text = within_deadline(&mut decoder, pending.load(Ordering::Relaxed)).await?;
+        cancel.0 = None;
         debug!("Timing: stop->final {} ms", stopped_at.elapsed().as_millis());
         Ok(text)
     }
@@ -238,6 +243,17 @@ struct AbortOnDrop(JoinHandle<Result<String, SttError>>);
 impl Drop for AbortOnDrop {
     fn drop(&mut self) {
         self.0.abort();
+    }
+}
+
+/// Calls the engine's cancel when dropped while armed.
+struct CancelOnDrop<'a>(Option<&'a (dyn Fn() + Send + Sync)>);
+
+impl Drop for CancelOnDrop<'_> {
+    fn drop(&mut self) {
+        if let Some(cancel) = self.0 {
+            cancel();
+        }
     }
 }
 

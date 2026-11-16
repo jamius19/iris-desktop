@@ -18,6 +18,16 @@ export struct SelectOption {
     streams: bool,
 }
 
+// A model menu's catalogue (Android `ModelCatalogs`): the models, whether it can be (re)loaded, whether it has
+// loaded, is loading, or failed.
+export struct ModelCatalog {
+    models: [SelectOption],
+    refreshable: bool,
+    loaded: bool,
+    loading: bool,
+    error: string,
+}
+
 export struct Placement {
     y: length,
     max-height: length,
@@ -45,6 +55,8 @@ export struct CustomProvider {
     reasoning-effort: string,
     send-json-schema: bool,
     key-set: bool,
+    // The start probe couldn't read the key from the keychain.
+    key-unreadable: bool,
 }
 
 export struct ProviderFormErrors {
@@ -113,13 +125,21 @@ export global Prefs {
     in property <bool> deepgram-key-set;
     in property <bool> soniox-key-set;
     in property <bool> openrouter-key-set;
+    // The start probe couldn't read these keys from the keychain.
+    in property <bool> openai-key-unreadable;
+    in property <bool> gateway-key-unreadable;
+    in property <bool> deepgram-key-unreadable;
+    in property <bool> soniox-key-unreadable;
+    in property <bool> openrouter-key-unreadable;
     in property <[SelectOption]> stt-providers;
     in property <[SelectOption]> on-device-models;
     in property <[SelectOption]> unload-options;
     in property <[SelectOption]> soniox-regions;
     in property <[SelectOption]> accelerators;
     in property <[SelectOption]> microphones;
-    in property <[SelectOption]> deepgram-models;
+    // The selected cloud provider's speech-to-text models (Deepgram: a static list).
+    in property <ModelCatalog> stt-catalog;
+    callback load-stt-models();
     in property <[GuideLine]> unload-guide;
     in property <string> unload-helper;
     // The selected on-device model's download (Android `OnDeviceModelStore.State`).
@@ -160,7 +180,11 @@ export global Prefs {
     // Built-ins, saved custom providers and the unsaved draft (if any).
     in property <[SelectOption]> cleanup-providers;
     in property <string> draft-id;
+    // The selected cleanup provider's models; reasoning levels for its saved model, flagged when not listed.
+    in property <ModelCatalog> cleanup-catalog;
+    callback load-cleanup-models();
     in property <[SelectOption]> reasoning-options;
+    in property <string> reasoning-error;
     in property <[Prompt]> prompts;
     in property <[SelectOption]> prompt-options;
     in property <Prompt> active-prompt;

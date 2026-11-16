@@ -6,23 +6,27 @@
 //! Wires dictation together (Android `AppContainer.kt`, Handy's `lib.rs` setup): inputs (global shortcut, other
 //! instances, SIGUSR2, the overlay's ✕) go to the hold-or-toggle coordinator, which starts and stops the dictation
 //! controller; the controller's state drives the overlay, the cancel shortcut and the idle unload; a final transcript
-//! is pasted. Settings reach the worker threads through a `watch` updated on every change.
+//! is cleaned up (if enabled) and pasted. Settings reach the worker threads through a `watch` updated on every change.
 
 use std::sync::{Arc, OnceLock};
+use std::time::Duration;
 
+use iris_core::cleanup::options::parse_provider_options;
+use iris_core::cleanup::{CleanupRequest, timed_cleanup, with_glossary};
 use iris_core::dictation::DictationState;
 use iris_core::dictation::controller::{Deps, DictationController};
 use iris_core::dictation::coordinator::{Activation, Coordinator};
 use iris_core::dictation::language::detect_language;
-use iris_core::settings::Settings;
+use iris_core::settings::{Settings, default_prompt};
+use iris_core::stt::SpeechToTextProvider;
 use iris_core::stt::local::store::ModelStore;
-use iris_core::stt::{AudioSource, BoxFuture, OnPartial, SpeechToTextProvider, SttError, SttRequest};
 use tokio::runtime::Runtime;
 use tokio::sync::watch;
 
 use crate::hotkey::{HotkeyEvent, Hotkeys};
 use crate::local::engine::LocalEngine;
 use crate::paste::{self, PasteOptions};
+use crate::providers::Providers;
 use crate::{capture, local};
 
 #[derive(Clone)]
@@ -32,6 +36,7 @@ pub struct Dictation {
     pub hotkeys: Hotkeys,
     pub store: ModelStore,
     pub engine: LocalEngine,
+    pub providers: Providers,
     pub settings: Arc<watch::Sender<Settings>>,
 }
 
@@ -62,35 +67,26 @@ impl Dictation {
             let s = selection.borrow();
             (s.on_device_stt_model.clone(), s.stt_language.clone())
         }));
+        let providers = Providers::new(runtime.handle(), settings.clone(), on_device);
         let data_dir = crate::project_dirs().data_local_dir().to_path_buf();
         let (audio_settings, session_settings, paste_settings) = (settings.clone(), settings.clone(), settings.clone());
+        let (stt_providers, warm_providers, final_providers) =
+            (providers.clone(), providers.clone(), providers.clone());
+        let warm_runtime = runtime.handle().clone();
         let controller = DictationController::new(
             runtime.handle().clone(),
             Deps {
                 audio: Box::new(move |rate| capture::record(&audio_settings.borrow().microphone_device, rate)),
-                stt: Box::new(move |s: &Settings| {
-                    // Cloud providers come in M3.
-                    if s.stt_on_device() { on_device.clone() } else { Arc::new(NotYetAvailable) }
-                }),
+                stt: Box::new(move |s: &Settings| stt_providers.speech_to_text(s)),
                 settings: Box::new(move || session_settings.borrow().clone()),
+                // The stop comes from the coordinator's thread: the warm-up's request needs the runtime.
+                warm_up_cleanup: Box::new(move |s: &Settings| {
+                    let _runtime = warm_runtime.enter();
+                    warm_providers.cleanup(s).warm_up();
+                }),
                 on_final_transcript: Box::new(move |text| {
-                    let options = PasteOptions::from_settings(&paste_settings.borrow());
-                    Box::pin(async move {
-                        let pasted = text.clone();
-                        let notice = match tokio::task::spawn_blocking(move || paste::paste(&pasted, &options)).await {
-                            Ok(Ok(())) => None,
-                            Ok(Err(notice)) => Some(notice),
-                            // The paste panicked: the text may not be on the clipboard yet.
-                            Err(_) => {
-                                let copied = text.clone();
-                                Some(match tokio::task::spawn_blocking(move || paste::copy(&copied)).await {
-                                    Ok(Ok(())) => paste::PASTE_FAILED.to_owned(),
-                                    _ => paste::not_copied(&text),
-                                })
-                            }
-                        };
-                        DictationState::Done { text, notice }
-                    })
+                    let settings = paste_settings.borrow().clone();
+                    Box::pin(deliver(text, settings, final_providers.clone()))
                 }),
                 vad_model: Box::new(move || local::vad::scorer(&data_dir)),
                 detect_language: Box::new(|text| {
@@ -112,7 +108,7 @@ impl Dictation {
             }
             HotkeyEvent::Cancel => cancel_listening(&keys_controller, &keys_coordinator),
         });
-        let dictation = Self { controller, coordinator, hotkeys, store, engine, settings };
+        let dictation = Self { controller, coordinator, hotkeys, store, engine, providers, settings };
         runtime.spawn(dictation.clone().follow_state());
         dictation
     }
@@ -160,16 +156,107 @@ fn cancel_listening(controller: &DictationController, coordinator: &Coordinator)
     }
 }
 
-/// The cloud providers until M3: every session ends with this error before the microphone opens.
-struct NotYetAvailable;
+/// Android `IrisAccessibilityService.onFinalTranscript`: the optional LLM cleanup, then the paste. A failed or
+/// timed-out cleanup pastes the original transcript, and a failed paste leaves the text on the clipboard, so the
+/// dictation is never lost.
+async fn deliver(transcript: String, settings: Settings, providers: Providers) -> DictationState {
+    let mut text = transcript.clone();
+    let mut cleanup_error = None;
+    let mut cleanup_timed_out = false;
+    if settings.cleanup_enabled {
+        let started = std::time::Instant::now();
+        match cleanup(transcript, &settings, &providers).await {
+            Some(Ok(cleaned)) => text = cleaned,
+            Some(Err(e)) => cleanup_error = Some(e),
+            None => {
+                cleanup_timed_out = true;
+                cleanup_error = Some("Cleanup timeout.".to_string());
+            }
+        }
+        let outcome = if cleanup_timed_out {
+            " timed out"
+        } else if cleanup_error.is_some() {
+            " failed"
+        } else {
+            ""
+        };
+        log::debug!("Timing: cleanup {} ms{outcome}", started.elapsed().as_millis());
+    }
+    let options = PasteOptions::from_settings(&settings);
+    let pasted = text.clone();
+    let paste_notice = match tokio::task::spawn_blocking(move || paste::paste(&pasted, &options)).await {
+        Ok(Ok(())) => None,
+        Ok(Err(notice)) => Some(notice),
+        // The paste panicked: the text may not be on the clipboard yet.
+        Err(_) => {
+            let copied = text.clone();
+            Some(match tokio::task::spawn_blocking(move || paste::copy(&copied)).await {
+                Ok(Ok(())) => paste::PASTE_FAILED.to_owned(),
+                _ => paste::not_copied(&text),
+            })
+        }
+    };
+    let notice = done_notice(cleanup_error, cleanup_timed_out, paste_notice);
+    DictationState::Done { text, notice }
+}
 
-impl SpeechToTextProvider for NotYetAvailable {
-    fn transcribe<'a>(
-        &'a self,
-        _audio: Box<dyn AudioSource + 'a>,
-        _request: SttRequest,
-        _on_partial: OnPartial,
-    ) -> BoxFuture<'a, Result<String, SttError>> {
-        Box::pin(async { Err(SttError("Cloud providers aren't available yet. Pick On device.".into())) })
+/// The cleaned text, a user-readable failure, or None on timeout (Android `timedCleanup`).
+async fn cleanup(text: String, settings: &Settings, providers: &Providers) -> Option<Result<String, String>> {
+    // Validated when saved; a stored value that no longer parses fails like any other unexpected error.
+    let Ok(provider_options) = parse_provider_options(settings.active_cleanup_provider_options()) else {
+        return Some(Err("Cleanup failed".into()));
+    };
+    let prompt = settings.active_prompt.clone().unwrap_or_else(default_prompt);
+    let request = CleanupRequest {
+        text,
+        system_prompt: with_glossary(&prompt.system_prompt, settings.active_custom_words()),
+        model: settings.active_cleanup_model().to_string(),
+        reasoning_effort: settings.active_cleanup_reasoning_effort().map(str::to_string),
+        provider_options,
+    };
+    let provider = providers.cleanup(settings);
+    let timeout = Duration::from_secs(settings.cleanup_timeout_seconds.max(0) as u64);
+    // Statistics (M4) record the duration here.
+    let result = timed_cleanup(timeout, |_| {}, provider.cleanup(request)).await?;
+    Some(result.map_err(|e| e.0))
+}
+
+/// Android `doneNotice` for the desktop paste: a cleanup failure, then what happened to the text. None when the
+/// cleaned (or, with cleanup off, the original) text was pasted.
+fn done_notice(cleanup_error: Option<String>, cleanup_timed_out: bool, paste_notice: Option<String>) -> Option<String> {
+    if cleanup_timed_out && paste_notice.is_none() {
+        return Some("Cleanup timeout. Pasted original text.".into());
+    }
+    let delivery = paste_notice.or_else(|| cleanup_error.is_some().then(|| "Inserted the original text".into()));
+    let lines: Vec<String> = cleanup_error.into_iter().chain(delivery).collect();
+    (!lines.is_empty()).then(|| lines.join("\n"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::done_notice;
+
+    #[test]
+    fn done_notices() {
+        let error = || Some("AI Gateway rate limit or quota reached".to_string());
+        let paste_failed = || Some(crate::paste::PASTE_FAILED.to_string());
+        assert_eq!(None, done_notice(None, false, None));
+        assert_eq!(paste_failed(), done_notice(None, false, paste_failed()));
+        assert_eq!(
+            Some("Cleanup timeout. Pasted original text.".into()),
+            done_notice(Some("Cleanup timeout.".into()), true, None)
+        );
+        assert_eq!(
+            Some("Cleanup timeout.\nCouldn't paste. The text is on the clipboard.".into()),
+            done_notice(Some("Cleanup timeout.".into()), true, paste_failed())
+        );
+        assert_eq!(
+            Some("AI Gateway rate limit or quota reached\nInserted the original text".into()),
+            done_notice(error(), false, None)
+        );
+        assert_eq!(
+            Some("AI Gateway rate limit or quota reached\nCouldn't paste. The text is on the clipboard.".into()),
+            done_notice(error(), false, paste_failed())
+        );
     }
 }

@@ -4,7 +4,7 @@
 */
 
 // Android `ui/settings/TranscriptionPage.kt` + `OnDeviceSettings.kt`. Desktop: the on-device Accelerator, the
-// Microphone picker first in Audio, the desktop RAM guide. Model catalogues come in M3.
+// Microphone picker first in Audio, the desktop RAM guide.
 
 import { Icons, Theme, Type } from "../theme.slint";
 import { Prefs, Copy, App } from "../globals.slint";
@@ -40,24 +40,28 @@ export component TranscriptionPage inherits PageScaffold {
         title: "Provider Settings";
         if Prefs.stt-gateway: ApiKeyField {
             is-set: Prefs.gateway-key-set;
+            unreadable: Prefs.gateway-key-unreadable;
             set-helper: Copy.api-key-helper(true, "post processing");
             unset-helper: Copy.api-key-helper(false, "post processing");
             name: "gateway_api_key";
         }
         if Prefs.stt-deepgram: ApiKeyField {
             is-set: Prefs.deepgram-key-set;
+            unreadable: Prefs.deepgram-key-unreadable;
             set-helper: Copy.api-key-helper(true, "");
             unset-helper: Copy.api-key-helper(false, "");
             name: "deepgram_api_key";
         }
         if Prefs.stt-soniox: ApiKeyField {
             is-set: Prefs.soniox-key-set;
+            unreadable: Prefs.soniox-key-unreadable;
             set-helper: Copy.api-key-helper(true, "");
             unset-helper: Copy.api-key-helper(false, "");
             name: "soniox_api_key";
         }
         if !Prefs.stt-gateway && !Prefs.stt-deepgram && !Prefs.stt-soniox: ApiKeyField {
             is-set: Prefs.openai-key-set;
+            unreadable: Prefs.openai-key-unreadable;
             placeholder: "sk-…";
             set-helper: Copy.api-key-helper(true, "");
             unset-helper: Copy.api-key-helper(false, "");
@@ -157,25 +161,48 @@ export component TranscriptionPage inherits PageScaffold {
         if Prefs.stt-gateway: ModelCombobox {
             label: "Speech-to-text Model";
             stored: Prefs.gateway-stt-model;
+            models: Prefs.stt-catalog.models;
+            refreshable: Prefs.stt-catalog.refreshable;
+            loaded: Prefs.stt-catalog.loaded;
+            loading: Prefs.stt-catalog.loading;
+            load-error: Prefs.stt-catalog.error;
+            load => { Prefs.load-stt-models(); }
             helper: "Live/real-time models show text as you speak. Others transcribe after you stop.";
             commit(draft) => { return Prefs.commit-text("gateway_stt_model", draft); }
         }
         if Prefs.stt-deepgram: ModelCombobox {
             label: "Speech-to-text Model";
             stored: Prefs.deepgram-stt-model;
-            models: Prefs.deepgram-models;
+            models: Prefs.stt-catalog.models;
+            refreshable: Prefs.stt-catalog.refreshable;
+            loaded: Prefs.stt-catalog.loaded;
+            loading: Prefs.stt-catalog.loading;
+            load-error: Prefs.stt-catalog.error;
+            load => { Prefs.load-stt-models(); }
             helper: "Deepgram models stream live by default unless realtime streaming is disabled below.";
             commit(draft) => { return Prefs.commit-text("deepgram_stt_model", draft); }
         }
         if Prefs.stt-soniox: ModelCombobox {
             label: "Speech-to-text Model";
             stored: Prefs.soniox-stt-model;
+            models: Prefs.stt-catalog.models;
+            refreshable: Prefs.stt-catalog.refreshable;
+            loaded: Prefs.stt-catalog.loaded;
+            loading: Prefs.stt-catalog.loading;
+            load-error: Prefs.stt-catalog.error;
+            load => { Prefs.load-stt-models(); }
             helper: "Real-time (rt) models show text as you speak. Async models transcribe after you stop.";
             commit(draft) => { return Prefs.commit-text("soniox_stt_model", draft); }
         }
         if !Prefs.stt-on-device && !Prefs.stt-gateway && !Prefs.stt-deepgram && !Prefs.stt-soniox: ModelCombobox {
             label: "Speech-to-text Model";
             stored: Prefs.stt-model;
+            models: Prefs.stt-catalog.models;
+            refreshable: Prefs.stt-catalog.refreshable;
+            loaded: Prefs.stt-catalog.loaded;
+            loading: Prefs.stt-catalog.loading;
+            load-error: Prefs.stt-catalog.error;
+            load => { Prefs.load-stt-models(); }
             helper: "Live/real-time models show text as you speak. Others transcribe after you stop.";
             commit(draft) => { return Prefs.commit-text("stt_model", draft); }
         }

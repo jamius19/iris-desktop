@@ -8,6 +8,7 @@
 //! comes back with `invoke_from_event_loop`.
 
 mod about;
+mod catalogs;
 mod keys;
 mod post_processing;
 mod shortcuts;
@@ -19,7 +20,8 @@ use std::io;
 use std::rc::Rc;
 
 use iris_core::copy::{self, SAVE_ERROR};
-use iris_core::settings::{SecretStore, Settings, Store};
+use iris_core::settings::{SecretStore, Settings, Store, secrets};
+use iris_core::stt::vercel::protocol::gateway_stt_live;
 use iris_core::ui_math::{self, Commit};
 use slint::winit_030::{EventResult, WinitWindowAccessor, winit};
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
@@ -38,6 +40,8 @@ pub struct AppState {
     pub store: Store,
     /// Keychain entries known to exist (keychains can't be listed: probed at start, then kept up to date).
     pub stored_secrets: HashSet<String>,
+    /// Keychain entries the start probe couldn't read (their fields say so instead of "Not set").
+    pub unreadable_secrets: HashSet<String>,
     /// The unsaved custom cleanup provider, if any.
     pub draft_id: Option<String>,
     pub favicons: Favicons,
@@ -46,6 +50,10 @@ pub struct AppState {
     pub dictation: Dictation,
     /// The recording overlay (Windows: a window of this process; Linux: the helper).
     pub overlay: OverlayHost,
+    /// The settings' model menus.
+    pub catalogs: catalogs::Catalogs,
+    /// The on-device (model, language) last warmed up, None while another provider is selected.
+    pub warmed: Option<(String, String)>,
 }
 
 thread_local! {
@@ -73,12 +81,15 @@ pub fn run() -> Result<(), slint::PlatformError> {
             runtime: runtime.clone(),
             store,
             stored_secrets: HashSet::new(),
+            unreadable_secrets: HashSet::new(),
             draft_id: None,
             favicons: Favicons::new(),
             services: ServiceStatus::default(),
             key_op_seq: 0,
             dictation: dictation.clone(),
             overlay,
+            catalogs: catalogs::Catalogs::default(),
+            warmed: None,
         })
     });
 
@@ -86,6 +97,7 @@ pub fn run() -> Result<(), slint::PlatformError> {
     wire_setters(&window);
     keys::wire(&window);
     post_processing::wire(&window);
+    catalogs::wire(&window);
     shortcuts::wire(&window);
     about::fill(&window);
     services::wire(&window);
@@ -128,6 +140,7 @@ pub fn refresh(state: &mut AppState) {
     let downloads = state.dictation.store.state().borrow().clone();
     transcription::fill(&state.window, &settings, &state.services, &downloads);
     post_processing::fill(state, &settings);
+    catalogs::fill(state, &settings);
     shortcuts::fill(state, &settings);
     state.overlay.set_config(
         &settings.overlay_position,
@@ -137,6 +150,16 @@ pub fn refresh(state: &mut AppState) {
     );
     state.dictation.settings.send_replace(settings.clone());
     state.dictation.engine.settings_changed();
+    // Android warms the model while the bubble shows; here at start and whenever the model or language changes. Not
+    // with Unload Model "Immediately": it would be unloaded again at once.
+    let selection =
+        settings.stt_on_device().then(|| (settings.on_device_stt_model.clone(), settings.stt_language.clone()));
+    if selection != state.warmed {
+        state.warmed = selection;
+        if state.warmed.is_some() && settings.on_device_unload_minutes != 0 {
+            state.dictation.providers.warm_up_on_device();
+        }
+    }
     let prefs = state.window.global::<Prefs>();
     prefs.set_overlay_position(settings.overlay_position.clone().into());
     prefs.set_panel_lines(settings.panel_lines);
@@ -150,6 +173,12 @@ pub fn refresh(state: &mut AppState) {
     prefs.set_feedback_volume_percent(settings.feedback_volume_percent);
     prefs.set_launch_at_startup(settings.launch_at_startup);
     prefs.set_wayland(services::wayland());
+    let unreadable = |name| state.unreadable_secrets.contains(name);
+    prefs.set_openai_key_unreadable(unreadable(secrets::OPENAI_API_KEY));
+    prefs.set_gateway_key_unreadable(unreadable(secrets::GATEWAY_API_KEY));
+    prefs.set_deepgram_key_unreadable(unreadable(secrets::DEEPGRAM_API_KEY));
+    prefs.set_soniox_key_unreadable(unreadable(secrets::SONIOX_API_KEY));
+    prefs.set_openrouter_key_unreadable(unreadable(secrets::OPENROUTER_API_KEY));
 }
 
 /// Maps a store write to the control's error text ("" = saved) and refreshes on success.
@@ -293,7 +322,12 @@ fn set_string(state: &mut AppState, key: &str, value: &str) -> SharedString {
             None => unreachable!("unknown string setting {key}"),
         },
     };
-    saved(state, result)
+    let error = saved(state, result);
+    // Soniox's catalogue is per region (and key): reloaded once the new region reached the providers.
+    if key == "soniox_region" && error.is_empty() {
+        state.dictation.providers.soniox_catalog.reload();
+    }
+    error
 }
 
 const BLANK_MODEL: &str = "Enter a model id.";
@@ -338,8 +372,11 @@ fn commit_text(state: &mut AppState, key: &str, draft: &str) -> CommitResult {
             let store = &mut state.store;
             let result = match key {
                 "stt_model" => store.set_stt_model(&value),
-                // Without the M3 catalogue every Gateway model counts as live (Android's `gatewaySttLive` default).
-                "gateway_stt_model" => store.set_gateway_stt_model(&value, true),
+                // Live per the catalogue's tag; a model it doesn't list (or no catalogue) counts as live.
+                "gateway_stt_model" => {
+                    let live = gateway_stt_live(&value, state.catalogs.gateway.models.as_deref());
+                    store.set_gateway_stt_model(&value, live)
+                }
                 "deepgram_stt_model" => store.set_deepgram_stt_model(&value),
                 "soniox_stt_model" => store.set_soniox_stt_model(&value),
                 "soniox_languages" => store.set_soniox_languages(&value),
@@ -399,6 +436,14 @@ fn wire_dictation(window: &MainWindow, runtime: &Runtime, dictation: &Dictation)
             let _ = slint::invoke_from_event_loop(move || with_state(|s| s.overlay.set_levels(&levels)));
         }
     });
+    let mut soniox = dictation.providers.soniox_catalog.state();
+    runtime.spawn(async move {
+        while soniox.changed().await.is_ok() {
+            let _ = slint::invoke_from_event_loop(|| with_state(refresh));
+        }
+    });
+    // Android loads it at app start (without a key: the "set your key" error, no request).
+    dictation.providers.soniox_catalog.reload();
     let mut loading = dictation.engine.loading();
     runtime.spawn(async move {
         while loading.changed().await.is_ok() {

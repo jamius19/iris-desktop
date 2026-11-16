@@ -9,7 +9,8 @@ use iris_core::copy::{self, STT_PROVIDERS, UNLOAD_HELPER, UNLOAD_RAM_GUIDE};
 use iris_core::settings::{ON_DEVICE_UNLOAD_MINUTES, STT_PROVIDER_OPENAI, Settings, stt_provider_label};
 use iris_core::stt::local::models::{self, ON_DEVICE_MODELS};
 use iris_core::stt::local::store::StoreState;
-use iris_core::stt::{self, DEEPGRAM_MODELS, SONIOX_REGIONS};
+use iris_core::stt::soniox::{SonioxRegion, soniox_region};
+use iris_core::stt::stt_takes_custom_words;
 use slint::ComponentHandle;
 
 use super::{model, option};
@@ -42,7 +43,7 @@ pub fn fill(window: &MainWindow, settings: &Settings, services: &ServiceStatus, 
             })
             .collect(),
     ));
-    let sent = stt::stt_takes_custom_words(settings);
+    let sent = stt_takes_custom_words(settings);
     prefs.set_stt_provider_note(copy::custom_words_stt_note(settings, sent).unwrap_or_default().into());
 
     prefs.set_openai_key_set(settings.open_ai_key_set);
@@ -50,23 +51,15 @@ pub fn fill(window: &MainWindow, settings: &Settings, services: &ServiceStatus, 
     prefs.set_deepgram_key_set(settings.deepgram_key_set);
     prefs.set_soniox_key_set(settings.soniox_key_set);
 
-    let region = SONIOX_REGIONS.into_iter().find(|(id, _)| *id == settings.soniox_region).unwrap_or(SONIOX_REGIONS[0]);
-    prefs.set_soniox_region(region.0.into());
-    prefs.set_soniox_regions(model(SONIOX_REGIONS.into_iter().map(|(id, label)| option(id, label)).collect()));
+    prefs.set_soniox_region(soniox_region(&settings.soniox_region).id().into());
+    prefs.set_soniox_regions(model(SonioxRegion::ALL.into_iter().map(|r| option(r.id(), r.label())).collect()));
 
     prefs.set_stt_model(settings.stt_model.clone().into());
     prefs.set_gateway_stt_model(settings.gateway_stt_model.clone().into());
     prefs.set_deepgram_stt_model(settings.deepgram_stt_model.clone().into());
     prefs.set_deepgram_upload(settings.deepgram_upload);
-    prefs.set_deepgram_models(model(
-        DEEPGRAM_MODELS
-            .into_iter()
-            .map(|id| SelectOption { streams: !settings.deepgram_upload, ..option(id, id) })
-            .collect(),
-    ));
     prefs.set_soniox_stt_model(settings.soniox_stt_model.clone().into());
     prefs.set_soniox_languages(settings.soniox_languages.clone().into());
-    prefs.set_soniox_live(settings.stt_soniox() && stt::soniox_streams(&settings.soniox_stt_model));
 
     prefs.set_on_device_stt_model(on_device.id.into());
     prefs.set_on_device_models(model(

@@ -9,23 +9,29 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+base64.workspace = true
 directories.workspace = true
 fs4.workspace = true
+futures-util.workspace = true
 keyring.workspace = true
 log.workspace = true
 regex.workspace = true
 reqwest.workspace = true
 rustfft.workspace = true
+rustls.workspace = true
+rustls-platform-verifier.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 strsim.workspace = true
-tokio = { workspace = true, features = ["macros", "sync", "time"] }
+tokio = { workspace = true, features = ["macros", "rt", "sync", "time"] }
+tokio-tungstenite.workspace = true
 url.workspace = true
 whatlang.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+wiremock.workspace = true
 tokio = { workspace = true, features = ["io-util", "net", "test-util"] }
 
 [build-dependencies]

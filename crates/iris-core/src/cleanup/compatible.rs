@@ -3,10 +3,172 @@
 * Since: 16/11/2026
 */
 
-//! Custom (OpenAI-compatible) cleanup providers: the provider form's validation (Android's `SettingsText.kt` and
+//! Custom (OpenAI-compatible) cleanup providers: the provider (Android `OpenAiCompatibleCleanup.kt`,
+//! `OpenAiCompatibleProtocol.kt`) and the provider form's validation (Android's `SettingsText.kt` and
 //! `PostProcessingPage.kt`).
 
+use std::sync::LazyLock;
+use std::time::Duration;
+
+use regex::Regex;
 use url::Url;
+
+use super::protocol::{
+    api_key, chat_request, execute, http_error_message, models_network_error_message, network_error_message,
+    parse_cleaned_text, parse_completion, parse_models_response, post_chat, warm_up,
+};
+use super::{CleanupError, CleanupProvider, CleanupRequest, GatewayModel};
+use crate::net::KeySource;
+use crate::stt::BoxFuture;
+
+const TAG: &str = "OpenAiCompatibleCleanup";
+
+/// The limit of every call (the max of the cleanup timeout setting). The response arrives only once the model is
+/// done, so a cleanup call has no read timeout: this is its only limit.
+const CALL_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Cleanup through a user-added OpenAI-compatible Chat Completions server (`name` in messages) at `base_url`. With
+/// `send_json_schema` the request asks for a strict `{ "text": string }` structured output; without it the reply's
+/// content is the cleaned text (minus a leading `<think>` block). No provider options.
+pub struct OpenAiCompatibleCleanup {
+    client: reqwest::Client,
+    name: String,
+    base_url: String,
+    send_json_schema: bool,
+    api_key: KeySource,
+    call_timeout: Duration,
+    /// Desktop: why `base_url` is refused ([`base_url_error`]: https only); no request goes out while set.
+    refused: Option<&'static str>,
+}
+
+impl OpenAiCompatibleCleanup {
+    /// A base URL that fails [`base_url_error`] is refused: every call fails without a request.
+    pub fn new(
+        client: reqwest::Client,
+        name: &str,
+        base_url: &str,
+        send_json_schema: bool,
+        api_key: KeySource,
+    ) -> Self {
+        let refused = base_url_error(base_url);
+        Self { refused, ..Self::with_timeout(client, name, base_url, send_json_schema, api_key, CALL_TIMEOUT) }
+    }
+
+    /// Any base URL (tests: an http server).
+    pub(crate) fn with_timeout(
+        client: reqwest::Client,
+        name: &str,
+        base_url: &str,
+        send_json_schema: bool,
+        api_key: KeySource,
+        call_timeout: Duration,
+    ) -> Self {
+        Self {
+            client,
+            name: name.into(),
+            base_url: base_url.into(),
+            send_json_schema,
+            api_key,
+            call_timeout,
+            refused: None,
+        }
+    }
+
+    fn check_base_url(&self) -> Result<(), CleanupError> {
+        match self.refused {
+            Some(error) => Err(CleanupError(format!("{}: {error}", self.name))),
+            None => Ok(()),
+        }
+    }
+
+    fn unexpected_response(&self) -> CleanupError {
+        CleanupError(format!("Unexpected response from {}", self.name))
+    }
+}
+
+impl CleanupProvider for OpenAiCompatibleCleanup {
+    fn cleanup(&self, request: CleanupRequest) -> BoxFuture<'_, Result<String, CleanupError>> {
+        Box::pin(async move {
+            self.check_base_url()?;
+            let name = &self.name;
+            if request.model.trim().is_empty() {
+                return Err(CleanupError(format!("Set a cleanup model for {name} in Iris settings")));
+            }
+            let key = api_key(&self.api_key, &format!("Add your {name} API key in Iris settings"), name).await?;
+            let body = chat_request(
+                &request.text,
+                &request.system_prompt,
+                &request.model,
+                request.reasoning_effort.as_deref(),
+                "",
+                None,
+                self.send_json_schema,
+            );
+            let call = post_chat(&self.client, &chat_completions_url(&self.base_url), &key, body, self.call_timeout);
+            let (code, response) = execute(call, network_error_message).await?;
+            if !(200..=299).contains(&code) {
+                return Err(CleanupError(http_error_message(code, &response, name)));
+            }
+            let completion = parse_completion(&response).ok_or_else(|| self.unexpected_response())?;
+            match completion.finish_reason.as_deref() {
+                Some("length") => return Err(CleanupError("Cleanup output was cut off".into())),
+                Some("content_filter") => return Err(CleanupError("Cleanup blocked by content filter".into())),
+                _ => {}
+            }
+            if let Some(refusal) = completion.refused() {
+                return Err(CleanupError(format!("Model refused: {refusal}")));
+            }
+            let content = completion.content.as_deref();
+            let cleaned = if self.send_json_schema {
+                content.and_then(parse_cleaned_text)
+            } else {
+                content.map(without_think_block).filter(|text| !text.is_empty())
+            };
+            cleaned.ok_or_else(|| self.unexpected_response())
+        })
+    }
+
+    /// Keyless `HEAD` of the models list: only opens the connection that [`cleanup`](CleanupProvider::cleanup) then
+    /// reuses (a 401 is fine). Skipped for a refused base URL.
+    fn warm_up(&self) {
+        if self.refused.is_none() {
+            warm_up(&self.client, &models_url(&self.base_url), TAG);
+        }
+    }
+
+    /// Every model the key can list (no type filter: some servers use other types, e.g. `chat`).
+    fn list_models(&self) -> BoxFuture<'_, Result<Vec<GatewayModel>, CleanupError>> {
+        Box::pin(async move {
+            self.check_base_url()?;
+            let name = &self.name;
+            let key = api_key(&self.api_key, &format!("Set your {name} API key to load models"), name).await?;
+            let call = self.client.get(models_url(&self.base_url)).bearer_auth(key).timeout(self.call_timeout);
+            let (code, body) = execute(call, models_network_error_message).await?;
+            if !(200..=299).contains(&code) {
+                return Err(CleanupError(http_error_message(code, &body, name)));
+            }
+            parse_models_response(&body).ok_or_else(|| self.unexpected_response())
+        })
+    }
+}
+
+// URLs of a user-added OpenAI-compatible server. The base URL includes the version path (e.g.
+// `https://api.groq.com/openai/v1`); `/v1` is never added.
+
+pub fn chat_completions_url(base_url: &str) -> String {
+    format!("{}/chat/completions", base_url.trim_end_matches('/'))
+}
+
+pub fn models_url(base_url: &str) -> String {
+    format!("{}/models", base_url.trim_end_matches('/'))
+}
+
+static LEADING_THINK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?is)^\s*<think>.*?</think>").unwrap());
+
+/// `content` without a leading `<think>…</think>` block (reasoning models that inline it), trimmed.
+pub fn without_think_block(content: &str) -> String {
+    LEADING_THINK.replace(content, "").trim().to_string()
+}
 
 /// Why a custom provider's Save can't go ahead, per field; all None = [`Self::ok`].
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -64,6 +226,9 @@ pub fn base_url_error(base_url: &str) -> Option<&'static str> {
 fn http_url(text: &str) -> Option<Url> {
     Url::parse(text.trim()).ok().filter(|url| matches!(url.scheme(), "http" | "https") && url.host_str().is_some())
 }
+
+#[cfg(test)]
+mod provider_tests;
 
 #[cfg(test)]
 mod tests {

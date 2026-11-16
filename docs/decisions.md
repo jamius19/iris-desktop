@@ -135,3 +135,55 @@ Throwaway code stayed in the session scratch directory; none of it is in the rep
   on the card and uses integer buffer scale only. Windows text scale is 1 (Slint doesn't follow the text-size
   setting). The helper is respawned at most once per session.
 - **Dependencies added**: see `docs/third-party.md`. `smithay-client-toolkit` is pinned to 0.19 (winit's copy).
+
+## M3 decisions
+- **Layout**: providers in `iris-core::stt::{openai,vercel,deepgram,soniox}` and `iris-core::cleanup::{protocol,
+  vercel,openrouter,compatible}`, ported from the Kotlin files of the same names with their tests; shared plumbing
+  in `iris-core::net` (one `reqwest::Client` for all providers, size-capped response reads, WebSocket connect with
+  headers and capped messages, keychain reads off the async workers, the 3 min warm-up throttle). The app's provider
+  choice is `iris::providers::Providers` (Android `AppContainer`: a plain `if`/`match` on the settings), not
+  `app.rs` (there is no `app.rs`; `ui/mod.rs` builds the app).
+- **No real-provider verification**: no API keys exist on the development machine. Every provider is tested against
+  local mock servers only; the real checks are in `docs/manual-checks.md`. The two public catalogues were fetched once
+  and parse (see `docs/providers.md`).
+- **TLS for WebSockets**: tokio-tungstenite with rustls and the OS verifier (`rustls-platform-verifier`, the same
+  verifier and aws-lc-rs provider reqwest uses); its bundled webpki roots only if the OS verifier can't be set up.
+- **Warm-up**: the controller warms the session's speech-to-text provider when a session starts, and the cleanup
+  provider at start and stop (Android's controller hooks). WebSocket providers have no warm-up (the handshake can't
+  reuse a reqwest connection); upload providers send Android's keyless HEAD (3 min throttle), so the upload after the
+  stop finds a warm connection. The on-device model is warmed at app start and when the on-device model or language
+  changes (Android warms while its bubble shows), except with Unload Model "Immediately".
+- **Timeouts**: OkHttp's read/call timeouts are per-request overall timeouts. Uploads get a send allowance of 10 s +
+  the audio's duration before the STT timeout (Kotlin's read timeout starts after the body is sent). Only OpenAI's
+  upload distinguishes a send timeout ("Timed out sending audio to OpenAI") from a server one; Deepgram and Gateway
+  uploads always say "Timed out waiting for the transcript", Soniox's upload "Timed out sending audio to Soniox".
+- **Pings**: every 30 s; a ping whose pong hasn't arrived by the next one fails the socket with OkHttp's message
+  ("Network error: sent ping but didn't receive pong within 30000ms"). Writes: a WebSocket frame that can't be
+  written within 10 s fails the socket (OkHttp's write timeout), all four providers.
+- **Keys**: a key that can't be sent as a header (control or non-ASCII characters) fails before the microphone opens
+  with "Invalid <Provider> API key" (new text; OkHttp would throw). A keychain read failure during a session or a
+  model-list load shows "Couldn't read the keychain."; the API key fields show the same instead of "Not set" when the
+  start probe couldn't read a key. The same rule applies to the cleanup providers (and the custom provider's model
+  list): an unsendable key fails with "Invalid <Provider> API key" before any request.
+- **Redirects**: provider calls follow redirects only within the same origin (up to 10); a redirect to another host
+  fails with "Network error: redirect to another host refused". Stricter than OkHttp, so a key never goes to another
+  host. The model download and favicon clients keep reqwest's default policy.
+- **Custom cleanup providers**: the base URL is HTTPS-only at request time too (not only in the form): an http URL
+  fails with "<name>: Base URL must start with https://" (new text) and no request.
+- **Cleanup notices** (Android `doneNotice`, desktop paste): a timeout with a successful paste → "Cleanup timeout.
+  Pasted original text."; another failure → the error, then "Inserted the original text" on the next line; a failed
+  paste after a cleanup failure → the error, then "Couldn't paste. The text is on the clipboard.". Provider options
+  that no longer parse → "Cleanup
+  failed".
+- **Model menus**: loaded as on Android (`ModelCatalogs`, `SettingsApp` effects) while the page's provider needs them;
+  a failed load waits for the refresh button (Android retried when the selection changed). The refresh icon spins
+  only with femtovg (the software renderer doesn't rotate images). Soniox's catalogue is app-wide and reloads at start,
+  on a Soniox key change and on a region change.
+- **Cancel**: a per-phrase on-device session that ends without its text (cancelled, failed, timed out) calls
+  `EngineSupervisor::cancel`, which kills the worker only if a decode is running (the next use reloads the model, as
+  in Handy). Streaming sessions already stop by dropping the engine stream.
+- **Keychain probe race**: the start probe is repeated if a key was saved or cleared while it ran.
+- **Not ported**: statistics hooks (M4; `timed_cleanup` keeps its `record` argument for them); Kotlin tests that
+  check OkHttp internals (connection reuse, `EventListener`) or WebSocket warm-ups (see the M3 report).
+- **Dependencies added**: see `docs/third-party.md`.
+

@@ -15,6 +15,7 @@ mod hotkey;
 mod local;
 mod overlay;
 mod paste;
+mod providers;
 mod services;
 #[cfg(target_os = "linux")]
 mod signals;

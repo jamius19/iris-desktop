@@ -4,9 +4,11 @@ Rust + Slint voice dictation app for Windows 10+ and Linux, recreating the Andro
 with desktop mechanisms from Handy (the Handy repo, MIT).
 `PLAN.md` is the plan (milestones M1–M4); `docs/decisions.md` holds decisions and spike results.
 
-Status: M1 (shell, design system, settings pages, persistence) and M2 (local dictation: engine worker, model
-downloads, capture, VAD gate, controller, hotkeys, overlay, paste, CLI) implemented; `cargo deny check licenses` not
-yet run (cargo-deny not installed). M3–M4 not started.
+Status: M1 (shell, design system, settings pages, persistence), M2 (local dictation: engine worker, model
+downloads, capture, VAD gate, controller, hotkeys, overlay, paste, CLI) and M3 (cloud speech-to-text: OpenAI, Vercel AI
+Gateway, Deepgram, Soniox; LLM cleanup: Gateway, OpenRouter, custom OpenAI-compatible; model menus) implemented. Cloud
+providers are tested against local mock servers only (no API keys on the dev machine). `cargo deny check licenses`
+not yet run (cargo-deny not installed). M4 not started.
 
 ## Commands (Git Bash, repo root)
 ```
@@ -30,15 +32,21 @@ cargo test -p iris -- --ignored --test-threads=1`.
 ## Layout
 - `crates/iris-core`: UI-free logic and its tests. `settings/` (model = Android `Settings.kt` + `toSettings`,
   store = typed JSON file in Android's backup encoding, secrets = keyring), `copy.rs` (Android `SettingsText.kt`,
-  desktop wording), `ui_math.rs` (dropdown placement, slider math, autosave commit), `cleanup/`, `stt/`
-  (`SpeechToTextProvider`, `AudioSource`, `wav.rs`; `local/`: model table, download store + transport, on-device
-  provider with the engine injected, idle rule), `audio/` (speech gate, resample, Sonic time-stretch from
+  desktop wording), `ui_math.rs` (dropdown placement, slider math, autosave commit), `net.rs` (the providers' HTTP
+  client, size-capped reads, WebSocket connect, keychain key reads, warm-up throttle; `net/test_support.rs`: the local
+  WebSocket test server), `cleanup/` (`CleanupProvider`, timed cleanup, glossary; `protocol.rs` Chat Completions body,
+  `vercel.rs`, `openrouter.rs`, `compatible.rs`, `options.rs`), `stt/` (`SpeechToTextProvider`, `AudioSource`,
+  `wav.rs`; `openai/`, `vercel/`, `deepgram/`, `soniox/`: one directory per cloud provider, `protocol.rs` + streaming
+  + upload (+ Soniox catalogue/models); `local/`: model table, download store + transport, on-device provider with the
+  engine injected, idle rule), `audio/` (speech gate, resample, Sonic time-stretch from
   `vendor/sonic`, visualizer), `dictation/` (state, controller, Handy's coordinator, filler words, language, custom
   words).
 - `crates/iris`: the binary. `ui/*.slint` (design system in `ui/theme.slint`, `ui/components/`, pages in
   `ui/pages/`, globals in `ui/globals.slint`), `src/ui/*.rs` (glue: fills `Prefs` from settings, dispatches setters by
-  settings key; `shortcuts.rs` for the Shortcut section and Global Shortcut row), `src/services.rs` (Home checks),
-  `src/favicons.rs`, `src/dictation.rs` (wires controller, coordinator, hotkeys, paste, overlay), `src/local/`
+  settings key; `shortcuts.rs` for the Shortcut section and Global Shortcut row; `catalogs.rs` the model menus),
+  `src/services.rs` (Home checks), `src/favicons.rs`, `src/providers.rs` (Android `AppContainer`: every provider,
+  and the one the settings select), `src/dictation.rs` (wires controller, coordinator, hotkeys, cleanup, paste,
+  overlay), `src/local/`
   (Handy's `engine_supervisor` verbatim in `supervisor/`, `engine.rs`, Silero `vad.rs`), `src/capture.rs`,
   `src/hotkey.rs`, `src/paste/`, `src/overlay/` (host; Windows window / Linux helper client), `src/cli.rs`,
   `src/single_instance.rs`, `src/signals.rs`, `src/headless.rs` (`-f`).
@@ -69,7 +77,14 @@ cargo test -p iris -- --ignored --test-threads=1`.
 - `main.rs` checks for `--transcribe-worker` before anything else: the binary is also the engine worker.
 - The controller's state reaches the UI only through `dictation.rs` → `invoke_from_event_loop`; hotkey callbacks run
   on the hotkey thread and must not call `Hotkeys::register_transcribe` (deadlock).
-- Never log transcripts: `dictation.rs` logs the state's variant name only.
+- Never log transcripts: `dictation.rs` logs the state's variant name only. Providers never log keys, transcripts,
+  custom words or bodies; `NetError` keeps only the innermost cause (reqwest's own message holds the URL).
+- Provider tests use real sockets on 127.0.0.1 (wiremock, `net::test_support::WsServer`): no `start_paused` there
+  (paused time auto-advances while waiting on I/O). Timeouts are injectable through `with_urls`-style constructors.
+- Anything that sends a request needs a tokio runtime context: callbacks on plain threads (the coordinator's stop,
+  hotkeys) must `Handle::enter()` first (warm-ups silently skip without one).
+- Python heredocs in Git Bash mangle backslash escapes (a `\n` in the text becomes a real line break); write such
+  scripts to a file first, or use the Edit tool.
 - Python edits on Windows: open files with `encoding='utf-8'` (the default code page corrupts "…").
 - `crates/iris/build.rs` stages transcribe-cpp libs into `crates/iris/transcribe-libs/` (gitignored, packaging) and,
   on Linux, next to the binary (`$ORIGIN` rpath). Windows and WSL builds share that staging dir.

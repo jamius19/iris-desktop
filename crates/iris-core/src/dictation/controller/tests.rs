@@ -202,6 +202,7 @@ type SttResult = Box<dyn Fn() -> BoxFuture<'static, Result<String, SttError>> + 
 #[derive(Default)]
 struct Seen {
     calls: usize,
+    warm_ups: usize,
     model: String,
     language: String,
     timeout: Duration,
@@ -298,6 +299,10 @@ impl SpeechToTextProvider for FakeStt {
         self.allows_speed_up
     }
 
+    fn warm_up(&self) {
+        self.seen().warm_ups += 1;
+    }
+
     fn wants_segment_ends(&self) -> bool {
         self.wants_segment_ends
     }
@@ -361,6 +366,8 @@ impl Setup {
 
     fn build(self) -> Harness {
         let finals = Shared::<Vec<String>>::default();
+        let warm_ups = Shared::<Vec<Settings>>::default();
+        let warmed = warm_ups.clone();
         let released = Arc::new(AtomicBool::new(false));
         let recorded_rate = Arc::new(AtomicU32::new(0));
         let settings = Settings { vad_enabled: self.vad_model.is_some(), ..self.settings };
@@ -374,6 +381,7 @@ impl Setup {
             }),
             stt: Box::new(move |_| stt.clone()),
             settings: Box::new(move || settings.clone()),
+            warm_up_cleanup: Box::new(move |s| warmed.lock().unwrap().push(s.clone())),
             on_final_transcript: self.on_final_transcript.unwrap_or_else(|| {
                 Box::new(move |text| {
                     collected.lock().unwrap().push(text.clone());
@@ -383,7 +391,8 @@ impl Setup {
             vad_model: self.vad_model.unwrap_or_else(|| Box::new(|| panic!("VAD off"))),
             detect_language: self.detect_language,
         };
-        Harness { controller: DictationController::new(Handle::current(), deps), finals, released, recorded_rate }
+        let controller = DictationController::new(Handle::current(), deps);
+        Harness { controller, finals, released, recorded_rate, warm_ups }
     }
 }
 
@@ -392,6 +401,8 @@ struct Harness {
     finals: Shared<Vec<String>>,
     released: Arc<AtomicBool>,
     recorded_rate: Arc<AtomicU32>,
+    /// The settings of every cleanup warm-up.
+    warm_ups: Shared<Vec<Settings>>,
 }
 
 impl Harness {
@@ -811,6 +822,52 @@ async fn done_with_notice_shows_it_for_longer() {
     assert_eq!(notice, h.state());
     advance(ERROR_MS - DONE_MS).await;
     assert_eq!(DictationState::Idle, h.state());
+}
+
+#[tokio::test(start_paused = true)]
+async fn cleanup_is_warmed_up_on_start_and_stop_when_enabled() {
+    let settings = Settings {
+        cleanup_enabled: true,
+        cleanup_provider_id: crate::settings::CLEANUP_PROVIDER_OPENROUTER.into(),
+        ..open_ai()
+    };
+    let h = Setup { settings: settings.clone(), ..Setup::new(stt(FakeStt::replying("Hi"))) }.build();
+
+    h.controller.start();
+    run_current().await;
+    assert_eq!(1, h.warm_ups.lock().unwrap().len());
+    h.controller.stop();
+    assert_eq!(2, h.warm_ups.lock().unwrap().len());
+    advance(101).await;
+    assert_eq!(done("Hi"), h.state());
+    // Both with the session's settings (VAD off: no model passed), so the same provider is warmed.
+    let session = Settings { vad_enabled: false, ..settings };
+    assert_eq!(vec![session.clone(), session], *h.warm_ups.lock().unwrap());
+}
+
+#[tokio::test(start_paused = true)]
+async fn cleanup_is_not_warmed_up_when_disabled() {
+    let h = Setup::new(stt(FakeStt::replying("Hi"))).build();
+
+    h.dictate().await;
+
+    assert_eq!(done("Hi"), h.state());
+    assert!(h.warm_ups.lock().unwrap().is_empty());
+}
+
+/// Desktop: the speech-to-text provider is warmed once as each session starts (an upload provider then has a warm
+/// connection for the upload after stop).
+#[tokio::test(start_paused = true)]
+async fn stt_is_warmed_up_once_per_session_at_start() {
+    let stt = stt(FakeStt::replying("Hi"));
+    let h = Setup::new(stt.clone()).build();
+
+    h.controller.start();
+    run_current().await;
+    assert_eq!(1, stt.seen().warm_ups);
+    h.controller.stop();
+    advance(101).await;
+    assert_eq!(1, stt.seen().warm_ups);
 }
 
 #[tokio::test(start_paused = true)]

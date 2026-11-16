@@ -323,11 +323,20 @@ export component SelectField inherits FieldGroup {
 
 // Editable black model dropdown: type any id (typing filters the list), or pick one. Focusing the field opens the
 // full list; the arrow toggles it. Up/Down move a highlight in the list, Enter picks it. A pick saves at once; typed
-// text commits on blur / Enter (blank = error).
+// text commits on blur / Enter (blank = error). With `refreshable`, a refresh button (spinning while `loading`)
+// reloads the catalogue, and the first open loads it when it isn't `loaded` yet; the list opens once it arrives.
 export component ModelCombobox inherits FieldGroup {
     in property <string> stored;
     in property <[SelectOption]> models;
+    in property <bool> refreshable;
+    in property <bool> loaded: true;
+    in property <bool> loading;
+    in property <string> load-error;
     callback commit(draft: string) -> CommitResult;
+    callback load();
+    // A load this field started from an open or a refresh: the list opens when it ends.
+    property <bool> awaiting;
+    property <bool> fetched-on-open;
     property <string> query;
     property <[SelectOption]> filtered: UiMath.filter-options(self.models, self.query);
     property <string> invalid-error;
@@ -337,7 +346,28 @@ export component ModelCombobox inherits FieldGroup {
     property <bool> arrowed;
     property <int> moved;
     property <int> highlight: self.arrowed ? self.moved : UiMath.index-of(self.filtered, self.stored);
-    error: self.invalid-error != "" ? self.invalid-error : self.save-error;
+    property <string> own-error: self.invalid-error != "" ? self.invalid-error : self.save-error;
+    error: self.own-error != "" && self.load-error != "" ? self.own-error + "\n" + self.load-error
+        : self.own-error != "" ? self.own-error : self.load-error;
+
+    // The list as the user opens it: the first open of a catalogue that isn't loaded loads it.
+    function open-list() {
+        if root.refreshable && !root.loaded && !root.loading && !root.fetched-on-open {
+            root.fetched-on-open = true;
+            root.awaiting = true;
+            root.load();
+        }
+        root.show-list();
+    }
+
+    changed loading => {
+        if !self.loading && self.awaiting {
+            self.awaiting = false;
+            if input.has-focus || !panel.is-open {
+                self.show-list();
+            }
+        }
+    }
 
     function do-commit() {
         if input.text == root.stored && root.invalid-error == "" {
@@ -397,7 +427,7 @@ export component ModelCombobox inherits FieldGroup {
                     root.arrowed = false;
                     if self.has-focus {
                         root.query = "";
-                        root.show-list();
+                        root.open-list();
                     } else {
                         panel.close();
                         root.do-commit();
@@ -456,8 +486,28 @@ export component ModelCombobox inherits FieldGroup {
                     } else {
                         root.query = "";
                         root.arrowed = false;
-                        root.show-list();
+                        root.open-list();
                     }
+                }
+            }
+        }
+        if root.refreshable: VerticalLayout {
+            alignment: center;
+            IconAction {
+                icon: Icons.refresh-cw;
+                tint: Theme.on-control;
+                width: 28px;
+                on-control: true;
+                takes-focus: false;
+                enabled: !root.loading;
+                // 900 ms per turn while loading (the software renderer draws it unrotated).
+                icon-rotation: root.loading ? (animation-tick() / 900ms) * 360deg : 0deg;
+                label: "Refresh models";
+                clicked => {
+                    root.query = "";
+                    root.arrowed = false;
+                    root.awaiting = true;
+                    root.load();
                 }
             }
         }

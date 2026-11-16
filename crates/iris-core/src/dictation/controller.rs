@@ -8,7 +8,8 @@
 //! [`stop`](DictationController::stop) ends the recording of a listening one, [`cancel`](DictationController::cancel)
 //! discards any. A finalizing session can't be stopped or restarted; it ends through the provider's own timeouts.
 //! The dictation is never lost: errors end in [`DictationState::Error`], a transcript always reaches
-//! `on_final_transcript`. Statistics hooks come in M4, cleanup warm-up in M3.
+//! `on_final_transcript`. A session warms its speech-to-text provider at start (an upload provider's connection for
+//! the upload after stop) and, with cleanup on, the cleanup provider at start and stop. Statistics hooks come in M4.
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -65,6 +66,9 @@ pub struct Deps {
     pub stt: SttFor,
     /// The current settings, read once per session.
     pub settings: Box<dyn Fn() -> Settings + Send + Sync>,
+    /// Warms the connection of the cleanup provider for a session's settings; called as recording starts and again
+    /// on stop if cleanup is enabled, so the cleanup call finds a warm connection. Must return at once.
+    pub warm_up_cleanup: Box<dyn Fn(&Settings) + Send + Sync>,
     /// Called with the final text of each successful session (fillers removed and custom words corrected, as the
     /// settings say); returns the [`DictationState::Done`] to show. It runs inside the session (still Finalizing):
     /// cancelling the session cancels it.
@@ -97,6 +101,8 @@ struct Session {
     task: Option<JoinHandle<()>>,
     /// When stop was called, or None while listening.
     stopped_at: Option<Instant>,
+    /// The session's settings if cleanup is on: the cleanup connection is warmed again on stop.
+    cleanup_settings: Option<Settings>,
 }
 
 impl DictationController {
@@ -133,6 +139,7 @@ impl DictationController {
         }
         session.generation += 1;
         session.stopped_at = None;
+        session.cleanup_settings = None;
         self.inner.levels.send_replace(Vec::new());
         self.inner.state.send_replace(DictationState::Listening { text: String::new() });
         let generation = session.generation;
@@ -149,6 +156,10 @@ impl DictationController {
             _ => return false,
         };
         session.stopped_at = Some(Instant::now());
+        // A long dictation may outlive the idle connection (pool/server/NAT); runs alongside STT finalization.
+        if let Some(config) = &session.cleanup_settings {
+            (self.inner.deps.warm_up_cleanup)(config);
+        }
         self.inner.levels.send_replace(Vec::new());
         self.inner.state.send_replace(DictationState::Finalizing { text });
         true
@@ -236,7 +247,15 @@ async fn run(inner: Arc<Inner>, generation: u64) {
 
 async fn session(inner: Arc<Inner>, generation: u64) -> Result<DictationState, SttError> {
     let config = (inner.deps.settings)();
+    if config.cleanup_enabled {
+        let mut session = inner.lock();
+        if session.generation == generation {
+            session.cleanup_settings = Some(config.clone());
+            (inner.deps.warm_up_cleanup)(&config);
+        }
+    }
     let stt = (inner.deps.stt)(&config);
+    stt.warm_up();
     let model = config.active_stt_model().to_string();
     let rate = stt.sample_rate(&model);
     let hangover = if stt.live_text(&model) { STREAMING_HANGOVER_MS } else { OFFLINE_HANGOVER_MS };
@@ -329,6 +348,7 @@ struct SessionAudio {
 }
 
 impl SessionAudio {
+    /// Cancel-safe: the only await is `recv`; everything after a chunk is taken runs without awaiting. Keep it so.
     async fn pull(&mut self) -> Result<Option<Vec<u8>>, SttError> {
         loop {
             if let Some(chunk) = self.out.pop_front() {

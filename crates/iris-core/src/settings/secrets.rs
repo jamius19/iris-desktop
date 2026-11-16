@@ -38,6 +38,12 @@ impl fmt::Display for SecretError {
 
 impl std::error::Error for SecretError {}
 
+impl SecretError {
+    pub fn new(message: impl Into<String>) -> Self {
+        SecretError(message.into())
+    }
+}
+
 impl From<keyring::Error> for SecretError {
     fn from(error: keyring::Error) -> Self {
         // Display, not Debug: Debug of BadEncoding/BadDataFormat holds the secret's bytes.
@@ -74,9 +80,9 @@ impl SecretStore {
         }
     }
 
-    /// Which of [names] are stored, probing each (keychains can't be listed); one that can't be read counts as not
-    /// stored (logged).
-    pub fn stored(&self, names: &[String]) -> HashSet<String> {
+    /// Which of [names] are stored, probing each (keychains can't be listed); one that can't be read is reported
+    /// apart (and logged) rather than as not stored.
+    pub fn stored(&self, names: &[String]) -> Probe {
         stored_by(names, |name| self.get(name))
     }
 
@@ -90,18 +96,28 @@ impl SecretStore {
     }
 }
 
-fn stored_by(names: &[String], get: impl Fn(&str) -> Result<Option<String>, SecretError>) -> HashSet<String> {
-    names
-        .iter()
-        .filter(|name| match get(name) {
-            Ok(value) => value.is_some(),
+/// What [`SecretStore::stored`] found: the stored names, and those the keychain couldn't read.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Probe {
+    pub stored: HashSet<String>,
+    pub unreadable: HashSet<String>,
+}
+
+fn stored_by(names: &[String], get: impl Fn(&str) -> Result<Option<String>, SecretError>) -> Probe {
+    let mut probe = Probe::default();
+    for name in names {
+        match get(name) {
+            Ok(Some(_)) => {
+                probe.stored.insert(name.clone());
+            }
+            Ok(None) => {}
             Err(e) => {
                 log::warn!("Couldn't read the key {name}: {e}");
-                false
+                probe.unreadable.insert(name.clone());
             }
-        })
-        .cloned()
-        .collect()
+        }
+    }
+    probe
 }
 
 #[cfg(test)]
@@ -114,7 +130,7 @@ mod tests {
     }
 
     fn stored_in(keychain: &HashMap<String, String>, names: &[String]) -> HashSet<String> {
-        stored_by(names, |name| Ok(keychain.get(name).cloned()))
+        stored_by(names, |name| Ok(keychain.get(name).cloned())).stored
     }
 
     fn keychain(names: &[String]) -> HashMap<String, String> {
@@ -142,16 +158,17 @@ mod tests {
         assert!(!stored.contains(&custom_cleanup_key("c1")));
     }
 
-    /// Desktop: a keychain error reads as not stored.
+    /// Desktop: a keychain error reads as not stored, and is reported as unreadable.
     #[test]
     fn unreadable_secret_is_not_stored() {
         let names = SecretStore::names([]);
-        let stored = stored_by(&names, |name| {
+        let probe = stored_by(&names, |name| {
             if name == OPENAI_API_KEY { Err(SecretError("locked".into())) } else { Ok(Some("k".into())) }
         });
 
-        assert!(!stored.contains(OPENAI_API_KEY));
-        assert_eq!(4, stored.len());
+        assert!(!probe.stored.contains(OPENAI_API_KEY));
+        assert_eq!(4, probe.stored.len());
+        assert_eq!(HashSet::from([OPENAI_API_KEY.to_string()]), probe.unreadable);
     }
 
     #[test]

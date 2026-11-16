@@ -7,17 +7,13 @@
 //! custom-provider form and favicons), prompts and custom words.
 
 use iris_core::cleanup::compatible::{key_usable, provider_draft_errors};
-use iris_core::copy::{
-    self, CLEANUP_PROVIDERS, GATEWAY_OPTIONS_HINT, OPENROUTER_OPTIONS_HINT, SAVE_ERROR, reasoning_effort_label,
-};
+use iris_core::copy::{self, CLEANUP_PROVIDERS, GATEWAY_OPTIONS_HINT, OPENROUTER_OPTIONS_HINT, SAVE_ERROR};
 use iris_core::settings::secrets::custom_cleanup_key;
-use iris_core::settings::{
-    CleanupPrompt, REASONING_EFFORTS, Settings, UNNAMED_PROVIDER, cleanup_provider_label, default_prompt,
-};
+use iris_core::settings::{CleanupPrompt, Settings, UNNAMED_PROVIDER, cleanup_provider_label, default_prompt};
 use iris_core::stt::stt_takes_custom_words;
 use slint::ComponentHandle;
 
-use super::{AppState, key_event, model, off_thread, option, refresh, saved, with_state};
+use super::{AppState, catalogs, key_event, model, off_thread, option, refresh, saved, with_state};
 use crate::{CustomProvider, Icons, MainWindow, Prefs, Prompt, ProviderFormErrors, SelectOption};
 
 pub fn fill(state: &mut AppState, settings: &Settings) {
@@ -61,6 +57,7 @@ pub fn fill(state: &mut AppState, settings: &Settings) {
         reasoning_effort: p.reasoning_effort.clone().unwrap_or_default().into(),
         send_json_schema: p.send_json_schema,
         key_set: settings.custom_cleanup_key_ids.contains(&p.id),
+        key_unreadable: state.unreadable_secrets.contains(&custom_cleanup_key(&p.id)),
     });
     prefs.set_custom_selected(selected.is_some());
     prefs.set_custom(selected.unwrap_or_default());
@@ -96,11 +93,6 @@ pub fn fill(state: &mut AppState, settings: &Settings) {
     }
     prefs.set_cleanup_providers(model(providers));
     prefs.set_draft_id(state.draft_id.clone().unwrap_or_default().into());
-
-    // "Model default" plus every level the APIs accept (a model's own list needs the M3 catalogue).
-    let mut efforts = vec![option("", &reasoning_effort_label(None))];
-    efforts.extend(REASONING_EFFORTS.iter().map(|e| option(e, &reasoning_effort_label(Some(e)))));
-    prefs.set_reasoning_options(model(efforts));
 
     prefs.set_prompts(model(settings.prompts.iter().map(prompt).collect()));
     prefs.set_prompt_options(model(settings.prompts.iter().map(|p| option(&p.id, &p.name)).collect()));
@@ -183,8 +175,12 @@ pub fn wire(window: &MainWindow) {
                                 .save_custom_cleanup_provider(&id, name.trim(), base_url.trim())
                                 .map_err(|e| log::warn!("Saving a provider failed: {e}"))
                         });
-                    if saved.is_ok() && state.draft_id.as_deref() == Some(id.as_str()) {
-                        state.draft_id = None;
+                    if saved.is_ok() {
+                        if state.draft_id.as_deref() == Some(id.as_str()) {
+                            state.draft_id = None;
+                        }
+                        // Its URL or key may have changed: its model list is reloaded.
+                        catalogs::custom_provider_saved(state, &id);
                     }
                     refresh(state);
                     key_event(state, &target, if saved.is_ok() { "" } else { SAVE_ERROR });

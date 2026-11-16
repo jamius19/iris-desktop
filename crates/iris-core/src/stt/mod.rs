@@ -3,8 +3,8 @@
 * Since: 16/11/2026
 */
 
-//! Speech-to-text: the provider interface (Android `SpeechToTextProvider.kt`), and the model predicates the settings
-//! pages need (M3 moves them into the provider protocol modules).
+//! Speech-to-text: the provider interface (Android `SpeechToTextProvider.kt`) and the providers: [`local`] (on
+//! device), [`openai`], [`vercel`] (Vercel AI Gateway), [`deepgram`], [`soniox`].
 
 use std::fmt;
 use std::future::Future;
@@ -13,7 +13,11 @@ use std::time::Duration;
 
 use crate::settings::Settings;
 
+pub mod deepgram;
 pub mod local;
+pub mod openai;
+pub mod soniox;
+pub mod vercel;
 pub mod wav;
 
 /// A boxed, sendable future (the provider methods' return type; `dyn` providers can't use `async fn`).
@@ -36,7 +40,8 @@ impl std::error::Error for SttError {}
 pub trait AudioSource: Send {
     /// The next chunk; `Ok(None)` once the recording ended (stop). An empty chunk is a segment end (only for
     /// providers that [want them](SpeechToTextProvider::wants_segment_ends)). Errors (microphone, "No speech
-    /// detected") are the session's: pass them on unchanged.
+    /// detected") are the session's: pass them on unchanged. Must be cancel-safe: dropping a pending `next()`
+    /// (providers poll it inside `select!`) loses no audio.
     fn next(&mut self) -> BoxFuture<'_, Result<Option<Vec<u8>>, SttError>>;
 }
 
@@ -84,6 +89,12 @@ pub trait SpeechToTextProvider: Send + Sync {
         false
     }
 
+    /// [`transcribe`](Self::transcribe) sends `model` the custom words; false = it ignores them (the settings' Custom
+    /// Words notes).
+    fn takes_custom_words(&self, _model: &str) -> bool {
+        false
+    }
+
     /// Streams `audio` to the service, reports the live transcript through `on_partial`, and once `audio` ends
     /// returns the final transcript. Dropping the future aborts and discards the session.
     fn transcribe<'a>(
@@ -117,66 +128,18 @@ pub fn joined(a: &str, b: &str) -> String {
     }
 }
 
-/// The models a Realtime transcription session accepts (Android `RealtimeProtocol.kt`); any other id is uploaded.
-pub const REALTIME_TRANSCRIPTION_MODELS: [&str; 8] = [
-    "whisper-1",
-    "gpt-transcribe",
-    "gpt-live-transcribe",
-    "gpt-4o-mini-transcribe",
-    "gpt-4o-mini-transcribe-2025-12-15",
-    "gpt-4o-transcribe",
-    "gpt-4o-transcribe-diarize",
-    "gpt-realtime-whisper",
-];
-
-/// Deepgram's static model list (no catalogue).
-pub const DEEPGRAM_MODELS: [&str; 3] = ["nova-3", "nova-3-medical", "nova-2"];
-
-/// Soniox regions: id and label; an unknown id means the first (US).
-pub const SONIOX_REGIONS: [(&str, &str); 4] =
-    [("us", "United States"), ("eu", "European Union"), ("jp", "Japan"), ("in", "India")];
-
-/// `model` streams over a Realtime session.
-pub fn is_realtime_transcription_model(model: &str) -> bool {
-    REALTIME_TRANSCRIPTION_MODELS.contains(&model.trim())
-}
-
-/// `model` takes custom words as `keywords`.
-pub fn uses_keywords(model: &str) -> bool {
-    matches!(model.trim(), "gpt-transcribe" | "gpt-live-transcribe")
-}
-
-/// `model` takes custom words as a `prompt`: whisper-1 and the gpt-4o(-mini)-transcribe models, not diarize.
-pub fn takes_prompt(model: &str) -> bool {
-    let id = model.trim();
-    if id == "whisper-1" {
-        return true;
-    }
-    let gpt4o = id.starts_with("gpt-4o-transcribe") || id.starts_with("gpt-4o-mini-transcribe");
-    gpt4o && !id.contains("diarize")
-}
-
-/// Keyterm prompting is Nova-3 only.
-pub fn takes_keyterms(model: &str) -> bool {
-    model.trim().starts_with("nova-3")
-}
-
-/// A Soniox model streams; without the catalogue (M3) the `stt-rt-` prefix decides, as Android's fallback.
-pub fn soniox_streams(model: &str) -> bool {
-    model.starts_with("stt-rt-")
-}
-
-/// The provider and model `settings` select get the custom words (Android `AppContainer.sttTakesCustomWords`).
+/// The provider and model `settings` select get the custom words (Android `AppContainer.sttTakesCustomWords`, from the
+/// same predicates the providers' `takes_custom_words` use).
 pub fn stt_takes_custom_words(settings: &Settings) -> bool {
     let model = settings.active_stt_model();
     if settings.stt_on_device() || settings.stt_gateway() {
         false
     } else if settings.stt_deepgram() {
-        takes_keyterms(model)
+        deepgram::protocol::takes_keyterms(model)
     } else if settings.stt_soniox() {
         true
     } else {
-        uses_keywords(model) || takes_prompt(model)
+        openai::protocol::uses_keywords(model) || openai::protocol::takes_prompt(model)
     }
 }
 
@@ -185,34 +148,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn openai_models_take_keywords_or_a_prompt() {
-        assert!(uses_keywords("gpt-live-transcribe"));
-        assert!(!uses_keywords("whisper-1"));
-        assert!(takes_prompt("whisper-1"));
-        assert!(takes_prompt("gpt-4o-mini-transcribe-2025-12-15"));
-        assert!(!takes_prompt("gpt-4o-transcribe-diarize"));
-        assert!(!takes_prompt("gpt-realtime-whisper"));
-    }
-
-    #[test]
-    fn only_nova_3_takes_keyterms() {
-        assert!(takes_keyterms(" nova-3-medical"));
-        assert!(!takes_keyterms("nova-2"));
-    }
-
-    #[test]
     fn joined_spaces_words_but_not_cjk() {
         assert_eq!("a b", joined("a", "b"));
         assert_eq!("b", joined("", "b"));
         assert_eq!("a", joined("a", ""));
         assert_eq!("你好世界", joined("你好", "世界"));
-    }
-
-    #[test]
-    fn realtime_models_and_soniox_fallback() {
-        assert!(is_realtime_transcription_model(" gpt-4o-transcribe "));
-        assert!(!is_realtime_transcription_model("gpt-4o-transcribe-2"));
-        assert!(soniox_streams("stt-rt-v6"));
-        assert!(!soniox_streams("stt-async-v6"));
     }
 }

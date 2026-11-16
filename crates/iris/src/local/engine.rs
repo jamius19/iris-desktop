@@ -108,6 +108,11 @@ impl LocalEngine {
             }),
             stream: Box::new(move |model, chunks| stream.stream(model, chunks)),
             selection: Box::new(selection),
+            cancel: Box::new({
+                let engine = self.clone();
+                // Kills the worker only while a decode runs (the next use reloads the model, as in Handy).
+                move || engine.inner.supervisor.cancel()
+            }),
             max_segment_bytes: iris_core::stt::local::provider::MAX_SEGMENT_BYTES,
         }
     }

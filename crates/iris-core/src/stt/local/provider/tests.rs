@@ -171,6 +171,7 @@ struct Seen {
     languages: Shared<Vec<String>>,
     partials: Shared<Vec<String>>,
     streams: Arc<AtomicUsize>,
+    cancels: Arc<AtomicUsize>,
 }
 
 impl Seen {
@@ -201,6 +202,12 @@ impl Seen {
                 taken
             }),
             selection: Box::new(|| (PER_PHRASE.to_string(), String::new())),
+            cancel: {
+                let cancels = self.cancels.clone();
+                Box::new(move || {
+                    cancels.fetch_add(1, Ordering::SeqCst);
+                })
+            },
             max_segment_bytes,
         }
     }
@@ -366,6 +373,21 @@ async fn cancelling_returns_promptly_during_a_decode() {
     run_current().await;
     assert!(session.is_finished());
     assert_eq!(Duration::ZERO, start.elapsed());
+    // Desktop: the engine's decode in flight is stopped too.
+    assert_eq!(1, seen.cancels.load(Ordering::SeqCst));
+}
+
+/// Desktop: only a per-phrase session that ends without its text cancels the engine's work.
+#[tokio::test(start_paused = true)]
+async fn the_engine_is_cancelled_only_when_a_session_ends_without_its_text() {
+    let seen = Seen::default();
+    let stt = seen.provider(Options { decode: replies(&["Hello"]), ..Options::default() });
+    assert_eq!(Ok("Hello".to_string()), seen.run(&stt, chunks(vec![chunk(10)])).await);
+    assert_eq!(0, seen.cancels.load(Ordering::SeqCst));
+
+    let hung = seen.provider(Options { decode: hung(), ..Options::default() });
+    assert_eq!(err("On-device transcription timed out"), seen.run(&hung, chunks(vec![chunk(10)])).await);
+    assert_eq!(1, seen.cancels.load(Ordering::SeqCst));
 }
 
 #[tokio::test(start_paused = true)]

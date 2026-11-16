@@ -22,3 +22,12 @@ signal-hook 0.4 (MIT OR Apache-2.0, Linux), libc 0.2 (MIT OR Apache-2.0), window
 smithay-client-toolkit 0.19 and x11rb 0.13 (MIT / MIT OR Apache-2.0, overlay helper, Linux), whatlang 0.18 (MIT),
 strsim 0.11 (MIT), rustfft 6 (MIT OR Apache-2.0), regex 1 (MIT OR Apache-2.0), fs4 1.1 (MIT OR Apache-2.0), sha2 0.11
 (MIT OR Apache-2.0), cc 1 (build, MIT OR Apache-2.0). Their transitive crates are permissive (see the M2 report).
+
+Rust crates added in M3 (licences read with `cargo metadata`; `cargo deny` not run, it isn't installed):
+tokio-tungstenite 0.30 (MIT), tungstenite 0.30 (MIT OR Apache-2.0), rustls 0.23 (Apache-2.0 OR ISC OR MIT, already
+pulled by reqwest), rustls-platform-verifier 0.7 (MIT OR Apache-2.0, already pulled by reqwest), base64 0.22 (MIT OR
+Apache-2.0), futures-util 0.3 (MIT OR Apache-2.0), reqwest's `multipart` feature (mime_guess 2.0, MIT); transitive:
+data-encoding 2.11 (MIT), sha1 0.11 (MIT OR Apache-2.0), httpdate 1.0 (MIT OR Apache-2.0), webpki-roots 0.26.11
+(CDLA-Permissive-2.0, a shim over the 1.x already in the tree). Dev only: wiremock 0.6 (MIT/Apache-2.0) with
+deadpool 0.12, deadpool-runtime 0.1, num_cpus 1.17 (MIT OR Apache-2.0) and assert-json-diff 2.0 (MIT). No GPL/AGPL.
+`docs/providers.md` is the Android app's provider provenance, copied with a desktop section.
