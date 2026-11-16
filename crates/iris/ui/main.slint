@@ -31,6 +31,11 @@ export component MainWindow inherits Window {
     background: Theme.background;
     default-font-family: "Inter";
 
+    out property <bool> dark: Theme.dark;
+    changed dark => {
+        App.dark-changed(self.dark);
+    }
+
     property <int> page: 0;
     property <int> from-page: 0;
     property <bool> forward: true;
@@ -41,6 +46,10 @@ export component MainWindow inherits Window {
 
     public function focus-root() {
         scope.focus();
+    }
+
+    public function open-page(to: int) {
+        root.navigate(to, true);
     }
 
     public function go-back() {

@@ -3,11 +3,12 @@
 * Since: 16/11/2026
 */
 
-//! Transcription page values (Android `TranscriptionPage.kt`, `OnDeviceSettings.kt`).
+//! Transcription page values (Android `TranscriptionPage.kt`, `OnDeviceSettings.kt`) and the model download group.
 
 use iris_core::copy::{self, STT_PROVIDERS, UNLOAD_HELPER, UNLOAD_RAM_GUIDE};
 use iris_core::settings::{ON_DEVICE_UNLOAD_MINUTES, STT_PROVIDER_OPENAI, Settings, stt_provider_label};
 use iris_core::stt::local::models::{self, ON_DEVICE_MODELS};
+use iris_core::stt::local::store::StoreState;
 use iris_core::stt::{self, DEEPGRAM_MODELS, SONIOX_REGIONS};
 use slint::ComponentHandle;
 
@@ -15,7 +16,7 @@ use super::{model, option};
 use crate::services::ServiceStatus;
 use crate::{GuideLine, Icons, MainWindow, Prefs, SelectOption};
 
-pub fn fill(window: &MainWindow, settings: &Settings, services: &ServiceStatus) {
+pub fn fill(window: &MainWindow, settings: &Settings, services: &ServiceStatus, downloads: &StoreState) {
     let prefs = window.global::<Prefs>();
     let icons = window.global::<Icons>();
     let on_device = models::by_id(&settings.on_device_stt_model);
@@ -75,12 +76,14 @@ pub fn fill(window: &MainWindow, settings: &Settings, services: &ServiceStatus) 
                 icon: if m.maker == "nvidia" { icons.get_nvidia() } else { icons.get_openai() },
                 has_icon: true,
                 tint_icon: m.maker == "openai",
+                badge: downloads.downloaded.contains(m.id),
                 streams: m.streams,
                 ..option(m.id, m.label)
             })
             .collect(),
     ));
     prefs.set_on_device_model_helper(copy::on_device_model_helper(on_device).into());
+    fill_download(window, settings, downloads);
     prefs.set_on_device_licence(on_device.licence.into());
     prefs.set_on_device_licence_url(on_device.licence_url.into());
     prefs.set_accelerators(model(vec![option("auto", "Auto"), option("cpu", "CPU only")]));
@@ -118,4 +121,27 @@ pub fn fill(window: &MainWindow, settings: &Settings, services: &ServiceStatus) 
     let skip_silence_model = settings.stt_on_device().then_some(on_device);
     prefs.set_skip_silence_subtitle(copy::skip_silence_subtitle(skip_silence_model).into());
     prefs.set_stt_speed_percent(settings.stt_speed_percent);
+}
+
+/// The selected model's download group (Android `OnDeviceModelSettings`).
+pub fn fill_download(window: &MainWindow, settings: &Settings, downloads: &StoreState) {
+    let prefs = window.global::<Prefs>();
+    let model = models::by_id(&settings.on_device_stt_model);
+    let downloading = downloads.downloading.as_deref() == Some(model.id);
+    prefs.set_model_downloaded(downloads.downloaded.contains(model.id));
+    prefs.set_model_downloading(downloading);
+    prefs.set_model_deleting(downloads.deleting.as_deref() == Some(model.id));
+    prefs.set_other_downloading(downloads.downloading.as_ref().is_some_and(|id| id != model.id));
+    let fraction = if downloading && downloads.total_bytes > 0 {
+        downloads.done_bytes as f32 / downloads.total_bytes as f32
+    } else {
+        0.0
+    };
+    prefs.set_download_fraction(fraction);
+    prefs.set_download_progress(
+        copy::download_progress_text(downloads.done_bytes as i64, downloads.total_bytes as i64).into(),
+    );
+    prefs.set_model_size(copy::megabytes_text(model.size_bytes as i64).into());
+    let error = downloads.error.as_ref().filter(|e| e.model_id == model.id).map(|e| e.message.clone());
+    prefs.set_download_error(error.unwrap_or_default().into());
 }

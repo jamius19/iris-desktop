@@ -11,17 +11,48 @@ rust-version.workspace = true
 
 [dependencies]
 iris-core.workspace = true
+iris-overlay.workspace = true
+arboard.workspace = true
+clap.workspace = true
 directories.workspace = true
+enigo.workspace = true
+handy-keys.workspace = true
 handy-recorder.workspace = true
+hound.workspace = true
+interprocess.workspace = true
+libc.workspace = true
 log.workspace = true
 open.workspace = true
 psl.workspace = true
 reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 simplelog.workspace = true
 slint.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["sync", "time", "macros"] }
+transcribe-cpp = { workspace = true, features = ["serde"] }
 url.workspace = true
 uuid.workspace = true
+
+# Vulkan GPU backend plus loadable per-ISA CPU modules (Handy's x64 and Linux setup).
+[target.'cfg(any(all(windows, target_arch = "x86_64"), target_os = "linux"))'.dependencies]
+transcribe-cpp = { workspace = true, features = ["serde", "dynamic-backends", "vulkan"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+signal-hook.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_System_RemoteDesktop",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [build-dependencies]
 slint-build.workspace = true

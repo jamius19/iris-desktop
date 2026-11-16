@@ -3,11 +3,12 @@
 * Since: 16/11/2026
 */
 
-//! Home's Services checks: the microphone, and on Wayland the text input tools. Re-checked when Home shows again.
-//! (Global Shortcut comes with the hotkeys in M2.)
+//! Home's Services checks: the microphone, the global shortcut, and on Wayland the text input tools. Re-checked when
+//! Home shows again and when the window gets focus.
 
 use slint::ComponentHandle;
 
+use crate::hotkey::ShortcutStatus;
 use crate::ui::{refresh, with_state};
 use crate::{MainWindow, Services};
 
@@ -18,6 +19,8 @@ const LINUX_SETUP_URL: &str = "https://github.com/jamius19/iris-desktop#linux";
 pub struct ServiceStatus {
     /// Microphones (id, name), monitors excluded.
     pub microphones: Vec<(String, String)>,
+    /// The transcribe shortcut's registration (None before the first).
+    pub shortcut: Option<ShortcutStatus>,
 }
 
 /// The app runs in a Wayland session (paste then needs wl-clipboard and ydotool).
@@ -51,7 +54,7 @@ pub fn check() {
                     Vec::new()
                 }
             };
-            let missing = text_input_missing();
+            let missing = crate::paste::text_input_missing();
             let _ = slint::invoke_from_event_loop(move || {
                 with_state(|state| {
                     let services = state.window.global::<Services>();
@@ -59,37 +62,13 @@ pub fn check() {
                     services.set_text_input_ready(missing.is_empty());
                     services.set_text_input_helper(missing.join(" ").into());
                     state.services.microphones = microphones;
+                    // Keyboard access may have been set up meanwhile (Linux udev rule).
+                    if state.services.shortcut == Some(ShortcutStatus::NoAccess) {
+                        crate::ui::register_shortcut(state);
+                    }
                     refresh(state);
                 })
             });
         });
     });
-}
-
-/// What paste on Wayland still needs, as helper sentences.
-fn text_input_missing() -> Vec<&'static str> {
-    if !wayland() {
-        return Vec::new();
-    }
-    let mut missing = Vec::new();
-    if !on_path("wl-copy") || !on_path("wl-paste") {
-        missing.push("Install wl-clipboard.");
-    }
-    if !on_path("ydotool") || !ydotoold_running() {
-        missing.push("Install ydotool and start ydotoold.");
-    }
-    missing
-}
-
-fn on_path(program: &str) -> bool {
-    std::env::var_os("PATH").is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join(program).is_file()))
-}
-
-/// ydotoold's socket exists in one of the places ydotool looks (Handy's list; the owner check comes with paste in M2).
-fn ydotoold_running() -> bool {
-    let runtime_dir = std::env::var_os("XDG_RUNTIME_DIR").map(|dir| std::path::Path::new(&dir).join(".ydotool_socket"));
-    runtime_dir
-        .into_iter()
-        .chain(["/tmp/.ydotool_socket".into(), "/run/ydotoold/socket".into()])
-        .any(|socket| socket.exists())
 }

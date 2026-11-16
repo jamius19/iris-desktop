@@ -3,7 +3,7 @@
 * Since: 16/11/2026
 */
 
-// Android `ui/settings/HomePage.kt`, desktop Services: Microphone, and on Wayland Text Input (Global Shortcut: M2).
+// Android `ui/settings/HomePage.kt`, desktop Services: Microphone, Global Shortcut, and on Wayland Text Input.
 
 import { Icons } from "../theme.slint";
 import { Services } from "../globals.slint";
@@ -26,6 +26,18 @@ export component HomePage inherits PageScaffold {
             not-ok-text: "Not found";
             helper: "Connect a microphone, or check that Iris may use it.";
             setup => { Services.microphone-setup(); }
+        }
+        ServicesDivider { }
+        StatusRow {
+            icon: Icons.keyboard;
+            icon-size: 22px;
+            icon-top-padding: 2px;
+            title: "Global Shortcut";
+            ok: Services.shortcut-registered;
+            ok-text: "Registered";
+            not-ok-text: "Not registered";
+            helper: Services.shortcut-helper;
+            setup => { Services.shortcut-setup(); }
         }
         if Services.wayland: ServicesDivider { }
         if Services.wayland: StatusRow {

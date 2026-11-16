@@ -209,3 +209,20 @@ export component Link inherits Rectangle {
         radius: 2px;
     }
 }
+
+// Android `ProgressBar.kt`: a 3 px line like the slider's track, `fraction` (0..1) filled in the accent colour.
+export component ProgressBar inherits Rectangle {
+    in property <float> fraction;
+    height: 3px;
+    border-radius: 1.5px;
+    background: Theme.track;
+    accessible-role: progress-indicator;
+    accessible-value: round(clamp(root.fraction, 0, 1) * 100) + "%";
+    Rectangle {
+        x: 0;
+        width: max(parent.height, parent.width * clamp(root.fraction, 0, 1));
+        visible: root.fraction > 0;
+        border-radius: parent.border-radius;
+        background: Theme.accent;
+    }
+}

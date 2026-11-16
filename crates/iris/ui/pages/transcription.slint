@@ -4,12 +4,13 @@
 */
 
 // Android `ui/settings/TranscriptionPage.kt` + `OnDeviceSettings.kt`. Desktop: the on-device Accelerator, the
-// Microphone picker first in Audio, the desktop RAM guide. The download group comes in M2, model catalogues in M3.
+// Microphone picker first in Audio, the desktop RAM guide. Model catalogues come in M3.
 
-import { Icons } from "../theme.slint";
+import { Icons, Theme, Type } from "../theme.slint";
 import { Prefs, Copy, App } from "../globals.slint";
-import { Card, Section, Separator, IconRow, Link } from "../components/basics.slint";
+import { Card, Section, Separator, IconRow, Link, Label, ProgressBar } from "../components/basics.slint";
 import { SwitchRow, SliderGroup, FieldGroup, ValueFormat } from "../components/rows.slint";
+import { SmallButton, DangerButton } from "../components/buttons.slint";
 import { ApiKeyField, AutosaveTextField } from "../components/fields.slint";
 import { SelectField, ModelCombobox } from "../components/dropdowns.slint";
 import { PageScaffold } from "../components/page.slint";
@@ -80,6 +81,66 @@ export component TranscriptionPage inherits PageScaffold {
             selected: Prefs.on-device-stt-model;
             helper: Prefs.on-device-model-helper;
             picked(id) => { self.error = Prefs.set-string("on_device_stt_model", id); }
+        }
+        if Prefs.stt-on-device: Separator { }
+        // Android `OnDeviceModelSettings`: progress + Cancel, Deleting…, Downloaded + Delete, or Download (size).
+        if Prefs.stt-on-device: FieldGroup {
+            label: "Download";
+            error: Prefs.download-error;
+            helper: Prefs.other-downloading && !Prefs.model-downloaded ? "Another model is downloading." : "";
+            if Prefs.model-downloading: VerticalLayout {
+                spacing: 8px;
+                ProgressBar {
+                    fraction: Prefs.download-fraction;
+                }
+                HorizontalLayout {
+                    Label {
+                        text: Prefs.download-progress;
+                        style: Type.subtitle;
+                        color: Theme.muted;
+                        wrap: no-wrap;
+                    }
+                    SmallButton {
+                        text: "Cancel";
+                        clicked => { Prefs.cancel-download(); }
+                    }
+                }
+            }
+            if !Prefs.model-downloading && Prefs.model-deleting: Label {
+                text: "Deleting…";
+                style: Type.subtitle;
+                color: Theme.muted;
+            }
+            if !Prefs.model-downloading && !Prefs.model-deleting && Prefs.model-downloaded: HorizontalLayout {
+                VerticalLayout {
+                    Label {
+                        text: "Downloaded";
+                        style: Type.subtitle;
+                        color: Theme.enabled;
+                        wrap: no-wrap;
+                    }
+                    Label {
+                        text: Prefs.model-size;
+                        style: Type.subtitle;
+                        wrap: no-wrap;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    DangerButton {
+                        text: "Delete";
+                        clicked => { Prefs.delete-model(); }
+                    }
+                }
+            }
+            if !Prefs.model-downloading && !Prefs.model-deleting && !Prefs.model-downloaded && !Prefs.other-downloading:
+                HorizontalLayout {
+                    alignment: start;
+                    SmallButton {
+                        text: "Download (" + Prefs.model-size + ")";
+                        clicked => { Prefs.download-model(); }
+                    }
+                }
         }
         if Prefs.stt-on-device: Separator { }
         if Prefs.stt-on-device: SelectField {

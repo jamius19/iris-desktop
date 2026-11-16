@@ -10,6 +10,7 @@
 mod about;
 mod keys;
 mod post_processing;
+mod shortcuts;
 mod transcription;
 
 use std::cell::RefCell;
@@ -24,7 +25,9 @@ use slint::winit_030::{EventResult, WinitWindowAccessor, winit};
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 use tokio::runtime::Runtime;
 
+use crate::dictation::Dictation;
 use crate::favicons::Favicons;
+use crate::overlay::OverlayHost;
 use crate::services::{self, ServiceStatus};
 use crate::{App, CommitResult, Copy, MainWindow, Nav, Placement, Prefs, SelectOption, TextStyle, Type, UiMath};
 
@@ -40,6 +43,9 @@ pub struct AppState {
     pub favicons: Favicons,
     pub services: ServiceStatus,
     pub key_op_seq: i32,
+    pub dictation: Dictation,
+    /// The recording overlay (Windows: a window of this process; Linux: the helper).
+    pub overlay: OverlayHost,
 }
 
 thread_local! {
@@ -58,6 +64,9 @@ pub fn run() -> Result<(), slint::PlatformError> {
     );
     let window = MainWindow::new()?;
     let store = Store::open(Store::default_path());
+    let dictation = Dictation::new(&runtime, store.settings(&HashSet::new()));
+    let cancel = dictation.clone();
+    let overlay = OverlayHost::new(move || cancel.cancel());
     STATE.with(|state| {
         *state.borrow_mut() = Some(AppState {
             window: window.clone_strong(),
@@ -68,6 +77,8 @@ pub fn run() -> Result<(), slint::PlatformError> {
             favicons: Favicons::new(),
             services: ServiceStatus::default(),
             key_op_seq: 0,
+            dictation: dictation.clone(),
+            overlay,
         })
     });
 
@@ -75,8 +86,11 @@ pub fn run() -> Result<(), slint::PlatformError> {
     wire_setters(&window);
     keys::wire(&window);
     post_processing::wire(&window);
+    shortcuts::wire(&window);
     about::fill(&window);
     services::wire(&window);
+    wire_dictation(&window, &runtime, &dictation);
+    with_state(shortcuts::register);
 
     // The mouse back button goes back, like Esc and Alt+Left. Home's checks rerun when the window gets focus.
     let weak = window.as_weak();
@@ -103,11 +117,26 @@ pub fn run() -> Result<(), slint::PlatformError> {
     window.run()
 }
 
+/// (Re)registers the transcribe shortcut.
+pub fn register_shortcut(state: &mut AppState) {
+    shortcuts::register(state);
+}
+
 /// Fills every global from the current settings.
 pub fn refresh(state: &mut AppState) {
     let settings = state.store.settings(&state.stored_secrets);
-    transcription::fill(&state.window, &settings, &state.services);
+    let downloads = state.dictation.store.state().borrow().clone();
+    transcription::fill(&state.window, &settings, &state.services, &downloads);
     post_processing::fill(state, &settings);
+    shortcuts::fill(state, &settings);
+    state.overlay.set_config(
+        &settings.overlay_position,
+        settings.panel_lines,
+        settings.panel_width_percent,
+        state.window.get_dark(),
+    );
+    state.dictation.settings.send_replace(settings.clone());
+    state.dictation.engine.settings_changed();
     let prefs = state.window.global::<Prefs>();
     prefs.set_overlay_position(settings.overlay_position.clone().into());
     prefs.set_panel_lines(settings.panel_lines);
@@ -257,6 +286,7 @@ fn set_string(state: &mut AppState, key: &str, value: &str) -> SharedString {
         "openrouter_cleanup_reasoning_effort" => store.set_open_router_cleanup_reasoning_effort(effort),
         "cleanup_active_prompt_id" => store.set_active_prompt(value),
         "overlay_position" => store.set_overlay_position(value),
+        "shortcut_activation" => store.set_shortcut_activation(value),
         "paste_method" => store.set_paste_method(value),
         _ => match key.strip_prefix("custom_cleanup_reasoning_effort:") {
             Some(id) => store.update_custom_cleanup_provider(id, |p| p.reasoning_effort = effort.map(str::to_string)),
@@ -339,6 +369,71 @@ fn active_prompt(settings: &Settings) -> iris_core::settings::CleanupPrompt {
 
 fn custom_model(settings: &Settings, id: &str) -> String {
     settings.custom_cleanup_providers.iter().find(|p| p.id == id).map(|p| p.model.clone()).unwrap_or_default()
+}
+
+/// Dictation's links to the UI: the download buttons, the overlay's levels and model-load notice, other instances'
+/// commands, SIGUSR2 and the colour scheme.
+fn wire_dictation(window: &MainWindow, runtime: &Runtime, dictation: &Dictation) {
+    let prefs = window.global::<Prefs>();
+    prefs.on_download_model(|| with_state(|s| s.dictation.store.download(&selected_model(s))));
+    prefs.on_cancel_download(|| with_state(|s| s.dictation.store.cancel()));
+    prefs.on_delete_model(|| with_state(|s| s.dictation.store.delete(&selected_model(s))));
+    window.global::<App>().on_dark_changed(|_| with_state(refresh));
+
+    let mut downloads = dictation.store.state();
+    runtime.spawn(async move {
+        while downloads.changed().await.is_ok() {
+            let downloads = downloads.borrow_and_update().clone();
+            let _ = slint::invoke_from_event_loop(move || {
+                with_state(|s| {
+                    let settings = s.store.settings(&s.stored_secrets);
+                    transcription::fill(&s.window, &settings, &s.services, &downloads);
+                })
+            });
+        }
+    });
+    let mut levels = dictation.controller.levels();
+    runtime.spawn(async move {
+        while levels.changed().await.is_ok() {
+            let levels = levels.borrow_and_update().clone();
+            let _ = slint::invoke_from_event_loop(move || with_state(|s| s.overlay.set_levels(&levels)));
+        }
+    });
+    let mut loading = dictation.engine.loading();
+    runtime.spawn(async move {
+        while loading.changed().await.is_ok() {
+            let loading = *loading.borrow_and_update();
+            let _ = slint::invoke_from_event_loop(move || with_state(|s| s.overlay.set_model_loading(loading)));
+        }
+    });
+
+    let commands = dictation.clone();
+    crate::single_instance::serve(move |command| match command {
+        "toggle" => commands.coordinator.external(),
+        "cancel" => commands.cancel(),
+        _ => {
+            let _ = slint::invoke_from_event_loop(|| with_state(|s| show_window(&s.window)));
+        }
+    });
+    #[cfg(target_os = "linux")]
+    {
+        let coordinator = dictation.coordinator.clone();
+        crate::signals::listen(move || coordinator.external());
+    }
+}
+
+/// Shows the window and brings it to the front (another instance was started).
+fn show_window(window: &MainWindow) {
+    if let Err(e) = window.show() {
+        log::warn!("Showing the window failed: {e}");
+    }
+    window.window().set_minimized(false);
+    window.window().with_winit_window(|w| w.focus_window());
+}
+
+fn selected_model(state: &AppState) -> String {
+    let settings = state.store.settings(&state.stored_secrets);
+    iris_core::stt::local::models::by_id(&settings.on_device_stt_model).id.to_string()
 }
 
 /// Runs blocking keychain work on the runtime, then `done` on the main thread with the state.

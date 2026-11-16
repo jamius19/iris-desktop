@@ -1,0 +1,339 @@
+/*
+* Author: Jamius Siam
+* Since: 16/11/2026
+*/
+
+// The recording overlay (PLAN §2.6): Handy's pill (`RecordingOverlay.tsx`) restyled with Iris's recording surfaces.
+// Black card with white content in both themes (1 px #FFFFFF1F outline in dark mode), Android's state colours and
+// glyphs (`ic_check`, `ic_close`, `ic_exclamation`), morphs as Android's bubble (250 ms, cubic (0.2, 0, 0, 1)).
+// The window is transparent and larger than the card; the card sits flush against the window's screen-edge side and
+// is centred. Rust sets everything through `iris_overlay::apply`; the host sizes the window and sets
+// `max-card-width`.
+//
+// Card per mode:
+// - listening: pill (red dot | waveform | timer ✕); live text opens a panel above it (below it at the top).
+// - working: a 40 px circle with a spinner; with text, the panel stays open over a spinner row.
+// - done: the circle fills green from its centre, with a tick.
+// - notice: red badge with "!" and the message, from its start, at least 4 lines, elided. Click dismisses.
+
+import "../../../assets/fonts/inter.ttf";
+
+export enum OverlayMode { listening, working, done, notice }
+
+export component OverlayWindow inherits Window {
+    in property <OverlayMode> mode;
+    in property <bool> shown;
+    // Live text (listening, working) or the notice / error message.
+    in property <string> text;
+    in property <bool> loading-model;
+    // Changes per listening session: restarts the timer.
+    in property <int> session;
+    in property <[float]> levels;
+    in property <bool> top;
+    in property <int> lines: 3;
+    in property <bool> dark;
+    in property <length> max-card-width: 400px;
+
+    callback cancel-clicked();
+    callback notice-clicked();
+    // The card moved or resized (hosts update the window's input region).
+    callback card-changed();
+
+    out property <length> card-x: card.x;
+    out property <length> card-y: card.y;
+    out property <length> card-width: card.width;
+    out property <length> card-height: card.height;
+
+    no-frame: true;
+    always-on-top: true;
+    background: transparent;
+    title: "Iris";
+    default-font-family: "Inter";
+
+    property <int> elapsed;
+    property <bool> notice: root.mode == OverlayMode.notice;
+    property <string> panel-text: root.text != "" ? root.text
+        : (root.mode == OverlayMode.listening && root.loading-model) ? "Loading model..." : "";
+    property <bool> panel-open: !root.notice && root.mode != OverlayMode.done && root.panel-text != "";
+    property <length> pill-width: 204px;
+    property <length> row-height: 40px;
+    property <length> pad-x: 16px;
+    property <length> line-height: line-probe.preferred-height;
+    // Live text keeps its last `lines` lines; never taller than the window allows.
+    property <length> live-max-height: min(root.lines * root.line-height, root.height - root.row-height - 16px);
+    property <length> live-height: min(live-text.height, root.live-max-height);
+    // Older lines show faded in this band above the live text (Handy's top fade), only once the text overflows.
+    property <length> fade: live-text.height > root.live-max-height ? 8px : 0px;
+    property <length> notice-max-height: min(max(root.lines, 4) * root.line-height, root.height - 24px);
+    property <length> target-width: root.notice
+        ? min(root.max-card-width, 42px + notice-probe.preferred-width + root.pad-x)
+        : root.panel-open ? max(root.pill-width, min(root.max-card-width, live-probe.preferred-width + 2 * root.pad-x))
+        : root.mode == OverlayMode.listening ? root.pill-width : root.row-height;
+    property <length> target-height: root.notice ? max(root.row-height, notice-text.height + 20px)
+        : root.panel-open ? root.row-height + 12px + root.live-height : root.row-height;
+    property <length> slide: root.shown ? 0px : 8px;
+
+    animate slide { duration: 350ms; easing: cubic-bezier(0.25, 0.1, 0.25, 1); }
+
+    changed session => { root.elapsed = 0; }
+    changed card-x => { root.card-changed(); }
+    changed card-y => { root.card-changed(); }
+    changed card-width => { root.card-changed(); }
+    changed card-height => { root.card-changed(); }
+
+    Timer {
+        interval: 1s;
+        running: root.shown && root.mode == OverlayMode.listening;
+        triggered => { root.elapsed += 1; }
+    }
+
+    // Measure text. `elide` keeps their natural width from becoming the window's minimum width.
+    line-probe := Text {
+        visible: false;
+        overflow: elide;
+        text: "Ag";
+        font-size: 15px;
+    }
+
+    live-probe := Text {
+        visible: false;
+        overflow: elide;
+        text: root.panel-text;
+        font-size: 15px;
+    }
+
+    notice-probe := Text {
+        visible: false;
+        overflow: elide;
+        text: root.text;
+        font-size: 14px;
+        font-weight: 500;
+    }
+
+    card := Rectangle {
+        width: root.target-width;
+        height: root.target-height;
+        x: (root.width - self.width) / 2;
+        y: root.top ? -root.slide : root.height - self.height + root.slide;
+        border-radius: root.target-height > root.row-height ? 16px : 20px;
+        background: #000000;
+        border-width: root.dark ? 1px : 0px;
+        border-color: #FFFFFF1F;
+        opacity: root.shown ? 1 : 0;
+        clip: true;
+        animate width, height, border-radius { duration: 300ms; easing: cubic-bezier(0.2, 0, 0, 1); }
+        animate opacity { duration: 250ms; easing: ease-out; }
+
+        // Notice: the whole card dismisses it.
+        TouchArea {
+            enabled: root.notice;
+            mouse-cursor: root.notice ? pointer : default;
+            clicked => { root.notice-clicked(); }
+        }
+
+        // Live text, newest line at the bottom; older lines fade out under the top edge.
+        live-clip := Rectangle {
+            x: root.pad-x;
+            y: (root.top ? root.row-height : 12px) - root.fade;
+            width: card.width - 2 * root.pad-x;
+            height: root.live-height + root.fade;
+            clip: true;
+
+            // The fade sits on the text: opacity on the clipping element breaks its clip in the software renderer.
+            live-text := Text {
+                width: parent.width;
+                height: self.preferred-height;
+                y: parent.height - self.height;
+                text: root.panel-text;
+                wrap: word-wrap;
+                font-size: 15px;
+                color: root.text != "" ? #FFFFFF : #FFFFFF99;
+                opacity: root.panel-open ? 1 : 0;
+                animate opacity { duration: 250ms; easing: ease-out; }
+            }
+
+            // `live-clip`, not `parent`: inside `if`, `parent` didn't resolve to the clip.
+            if root.fade > 0: Rectangle {
+                x: 0;
+                y: 0;
+                width: live-clip.width;
+                height: root.fade;
+                background: @linear-gradient(180deg, #000000 0%, #00000000 100%);
+            }
+        }
+
+        notice-text := Text {
+            x: 42px;
+            width: max(0px, card.width - 42px - root.pad-x);
+            height: min(self.preferred-height, root.notice-max-height);
+            y: (card.height - self.height) / 2;
+            text: root.notice ? root.text : "";
+            wrap: word-wrap;
+            overflow: elide;
+            vertical-alignment: TextVerticalAlignment.top;
+            font-size: 14px;
+            font-weight: 500;
+            color: #FFFFFF;
+            opacity: root.notice ? 1 : 0;
+            animate opacity { duration: 250ms; easing: cubic-bezier(0.2, 0, 0, 1); }
+        }
+
+        // The control row: the 40 px state zone on the left, waveform in the middle, timer and ✕ on the right.
+        row := Rectangle {
+            width: card.width;
+            height: root.notice ? card.height : root.row-height;
+            y: root.top || root.notice ? 0 : card.height - self.height;
+
+            // Listening: red dot with a pulse ring (Handy's `sdot`).
+            if root.mode == OverlayMode.listening: Rectangle {
+                property <float> t: mod(animation-tick() / 1ms, 1900) / 1900;
+                width: 8px + 14px * min(1, self.t / 0.7);
+                height: self.width;
+                x: 20px - self.width / 2;
+                y: (parent.height - self.height) / 2;
+                border-radius: self.width / 2;
+                background: #D32F2F.with-alpha(0.35 * max(0, 1 - self.t / 0.7));
+            }
+            Rectangle {
+                width: root.mode == OverlayMode.listening ? 8px : 0px;
+                height: self.width;
+                x: 20px - self.width / 2;
+                y: (parent.height - self.height) / 2;
+                border-radius: self.width / 2;
+                background: #D32F2F;
+                animate width { duration: 250ms; easing: cubic-bezier(0.2, 0, 0, 1); }
+            }
+
+            // Working: 270° arc, 900 ms per turn (Android's bubble spinner).
+            if root.mode == OverlayMode.working: Path {
+                property <angle> a: mod(animation-tick() / 1ms, 900) / 900 * 360deg;
+                property <angle> b: self.a + 270deg;
+                width: 16px;
+                height: 16px;
+                x: 12px;
+                y: (parent.height - self.height) / 2;
+                viewbox-width: 24;
+                viewbox-height: 24;
+                commands: "M \{12 + 9 * cos(self.a)} \{12 + 9 * sin(self.a)} "
+                    + "A 9 9 0 1 1 \{12 + 9 * cos(self.b)} \{12 + 9 * sin(self.b)}";
+                stroke: #FFFFFF;
+                stroke-width: 2px;
+                stroke-line-cap: round;
+            }
+
+            // Done: green grows from the centre, then the tick grows in from 60 %.
+            Rectangle {
+                width: root.mode == OverlayMode.done ? 40px : 0px;
+                height: self.width;
+                x: 20px - self.width / 2;
+                y: (parent.height - self.height) / 2;
+                border-radius: self.width / 2;
+                background: #33C344;
+                animate width { duration: 250ms; easing: cubic-bezier(0.2, 0, 0, 1); }
+            }
+            Path {
+                width: root.mode == OverlayMode.done ? 19px : 11px;
+                height: self.width;
+                x: 20px - self.width / 2;
+                y: (parent.height - self.height) / 2;
+                viewbox-width: 24;
+                viewbox-height: 24;
+                commands: "M4.5,12.5L9,17L19.5,6.5";
+                stroke: #FFFFFF;
+                stroke-width: self.width * 3 / 24;
+                stroke-line-cap: round;
+                stroke-line-join: round;
+                opacity: root.mode == OverlayMode.done ? 1 : 0;
+                animate width, opacity { duration: 250ms; easing: cubic-bezier(0.2, 0, 0, 1); }
+            }
+
+            // Notice: red badge with "!".
+            Rectangle {
+                width: root.notice ? 24px : 0px;
+                height: self.width;
+                x: 20px - self.width / 2;
+                y: (parent.height - self.height) / 2;
+                border-radius: self.width / 2;
+                background: #D32F2F;
+                animate width { duration: 250ms; easing: cubic-bezier(0.2, 0, 0, 1); }
+            }
+            Path {
+                width: root.notice ? 14px : 8px;
+                height: self.width;
+                x: 20px - self.width / 2;
+                y: (parent.height - self.height) / 2;
+                viewbox-width: 24;
+                viewbox-height: 24;
+                commands: "M10,3h4v12h-4z M12,19m-2,0a2,2 0,1 1,4 0a2,2 0,1 1,-4 0";
+                fill: #FFFFFF;
+                opacity: root.notice ? 1 : 0;
+                animate width, opacity { duration: 250ms; easing: cubic-bezier(0.2, 0, 0, 1); }
+            }
+
+            // Waveform: Handy's 9 bars, 3–18 px.
+            Rectangle {
+                x: (parent.width - 60px) / 2;
+                width: 60px;
+                opacity: root.mode == OverlayMode.listening ? 1 : 0;
+                animate opacity { duration: 200ms; easing: ease-out; }
+
+                for level[i] in root.levels: Rectangle {
+                    x: i * 7px;
+                    width: 4px;
+                    height: max(3px, min(18px, 3px + pow(max(0, level), 0.7) * 15px));
+                    y: (parent.height - self.height) / 2;
+                    border-radius: 2px;
+                    background: #FFFFFF;
+                    animate height { duration: 80ms; }
+                }
+            }
+
+            timer := Text {
+                x: cancel.x - 8px - self.width;
+                width: 40px;
+                height: root.row-height;
+                horizontal-alignment: right;
+                vertical-alignment: center;
+                text: "\{floor(root.elapsed / 60)}:\{mod(root.elapsed, 60) < 10 ? "0" : ""}\{mod(root.elapsed, 60)}";
+                font-size: 12px;
+                font-weight: 500;
+                color: #FFFFFF80;
+                opacity: root.mode == OverlayMode.listening ? 1 : 0;
+                animate opacity { duration: 200ms; easing: ease-out; }
+            }
+
+            // ✕ cancels; only while listening (finalizing can't be cancelled).
+            cancel := Rectangle {
+                x: parent.width - 9px - 22px;
+                y: 9px;
+                width: 22px;
+                height: 22px;
+                border-radius: 11px;
+                background: cancel-area.has-hover ? #FFFFFF33 : #FFFFFF1F;
+                opacity: root.mode == OverlayMode.listening ? 1 : 0;
+                accessible-role: button;
+                accessible-label: "Cancel dictation";
+                accessible-action-default => { root.cancel-clicked(); }
+                animate background { duration: 150ms; }
+                animate opacity { duration: 200ms; easing: ease-out; }
+
+                Path {
+                    width: 10px;
+                    height: 10px;
+                    viewbox-width: 24;
+                    viewbox-height: 24;
+                    commands: "M6,6L18,18M18,6L6,18";
+                    stroke: #FFFFFFCC;
+                    stroke-width: 1.6px;
+                    stroke-line-cap: round;
+                }
+
+                cancel-area := TouchArea {
+                    enabled: root.mode == OverlayMode.listening;
+                    mouse-cursor: pointer;
+                    clicked => { root.cancel-clicked(); }
+                }
+            }
+        }
+    }
+}

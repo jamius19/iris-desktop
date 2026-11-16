@@ -122,6 +122,18 @@ export global Prefs {
     in property <[SelectOption]> deepgram-models;
     in property <[GuideLine]> unload-guide;
     in property <string> unload-helper;
+    // The selected on-device model's download (Android `OnDeviceModelStore.State`).
+    in property <bool> model-downloaded;
+    in property <bool> model-downloading;
+    in property <bool> model-deleting;
+    in property <bool> other-downloading;
+    in property <float> download-fraction;
+    in property <string> download-progress;
+    in property <string> model-size;
+    in property <string> download-error;
+    callback download-model();
+    callback cancel-download();
+    callback delete-model();
 
     // Post processing.
     in property <bool> remove-filler-words;
@@ -166,6 +178,16 @@ export global Prefs {
     in property <int> feedback-volume-percent;
     in property <bool> launch-at-startup;
     in property <bool> wayland;
+    // Shortcuts: the bindings as key caps; `recording-shortcut` is the one being recorded ("transcribe", "cancel"
+    // or "").
+    in property <[string]> shortcut-transcribe-caps;
+    in property <[string]> shortcut-cancel-caps;
+    in property <string> shortcut-activation;
+    in property <string> shortcut-transcribe-error;
+    in property <string> recording-shortcut;
+    callback record-shortcut(key: string);
+    callback stop-recording-shortcut();
+    callback reset-shortcut(key: string);
 
     // A custom provider's own settings use the keys `custom_cleanup_model:<id>`,
     // `custom_cleanup_reasoning_effort:<id>` and `custom_cleanup_send_json_schema:<id>`; the active prompt's
@@ -220,8 +242,11 @@ export global Services {
     in property <bool> wayland;
     in property <bool> text-input-ready;
     in property <string> text-input-helper;
+    in property <bool> shortcut-registered;
+    in property <string> shortcut-helper;
     callback microphone-setup();
     callback text-input-setup();
+    callback shortcut-setup();
     callback recheck();
 }
 
@@ -234,4 +259,6 @@ export global App {
     in property <string> version;
     in property <[Licence]> licences;
     callback open-url(url: string);
+    // The colour scheme changed (the overlay follows it).
+    callback dark-changed(dark: bool);
 }

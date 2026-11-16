@@ -3,19 +3,58 @@
 * Since: 16/11/2026
 */
 
-// Desktop-only page: text insertion (Handy's paste settings), sounds and startup. The Shortcut section comes in M2;
-// the settings take effect in M2 (paste) and M4 (sounds, startup).
+// Desktop-only page: the global shortcut (Handy's hold-or-toggle coordinator), text insertion (Handy's paste
+// settings), sounds and startup. Sounds and startup take effect in M4.
 
 import { Metrics } from "../theme.slint";
 import { Prefs } from "../globals.slint";
 import { Section, Separator } from "../components/basics.slint";
 import { SwitchRow, SliderGroup, ValueFormat } from "../components/rows.slint";
 import { SelectField } from "../components/dropdowns.slint";
+import { ShortcutField } from "../components/shortcut.slint";
 import { PageScaffold } from "../components/page.slint";
 
 export component DictationPage inherits PageScaffold {
     title: "Dictation Settings";
 
+    Section {
+        title: "Shortcut";
+        ShortcutField {
+            label: "Transcribe Shortcut";
+            caps: Prefs.shortcut-transcribe-caps;
+            recording: Prefs.recording-shortcut == "transcribe";
+            error: Prefs.shortcut-transcribe-error;
+            helper: Prefs.wayland
+                ? "On Wayland without keyboard access, bind `iris --toggle-transcription` in your desktop's "
+                    + "keyboard settings."
+                : "";
+            record => { Prefs.record-shortcut("transcribe"); }
+            stop-recording => { Prefs.stop-recording-shortcut(); }
+            reset => { Prefs.reset-shortcut("transcribe"); }
+        }
+        Separator { }
+        SelectField {
+            label: "Activation";
+            options: [
+                { id: "hold_or_toggle", label: "Hold or Toggle" },
+                { id: "toggle", label: "Toggle" },
+                { id: "push_to_talk", label: "Push to Talk" },
+            ];
+            selected: Prefs.shortcut-activation;
+            helper: "Hold or Toggle: hold to talk, or tap to start and tap again to stop.";
+            picked(id) => { self.error = Prefs.set-string("shortcut_activation", id); }
+        }
+        Separator { }
+        ShortcutField {
+            label: "Cancel Shortcut";
+            caps: Prefs.shortcut-cancel-caps;
+            recording: Prefs.recording-shortcut == "cancel";
+            helper: "Active only while dictating.";
+            record => { Prefs.record-shortcut("cancel"); }
+            stop-recording => { Prefs.stop-recording-shortcut(); }
+            reset => { Prefs.reset-shortcut("cancel"); }
+        }
+    }
     Section {
         title: "Text Insertion";
         SelectField {
