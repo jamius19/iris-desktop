@@ -77,6 +77,26 @@ pub fn with_state<R>(f: impl FnOnce(&mut AppState) -> R) -> R {
     STATE.with(|state| f(state.borrow_mut().as_mut().expect("state not set")))
 }
 
+/// The settings window's size relative to the monitor's scale factor: the phone-sized design is too big on a desktop.
+const UI_SCALE: f32 = 0.9;
+/// `MainWindow`'s min-width and min-height.
+const MIN_SIZE: (f32, f32) = (460.0, 400.0);
+
+/// Sets the window's scale factor to `UI_SCALE` of `monitor` and lays it out again at its current physical size.
+fn set_ui_scale(window: &slint::Window, monitor: f32) {
+    let scale_factor = monitor * UI_SCALE;
+    window.dispatch_event(slint::platform::WindowEvent::ScaleFactorChanged { scale_factor });
+    // Slint applies the minimum size only when it changes, at the factor of that time.
+    window.with_winit_window(|w| {
+        w.set_min_inner_size(Some(winit::dpi::LogicalSize::new(MIN_SIZE.0 * UI_SCALE, MIN_SIZE.1 * UI_SCALE)))
+    });
+    // Zero while minimized (Slint doesn't pass that on either).
+    let size = window.size();
+    if size.width > 0 && size.height > 0 {
+        window.dispatch_event(slint::platform::WindowEvent::Resized { size: size.to_logical(scale_factor) });
+    }
+}
+
 /// Runs the app until Quit (without a tray: until the window closes); Err if the event loop couldn't start or failed
 /// (e.g. no GL for femtovg).
 pub fn run(start_hidden: bool, no_tray: bool) -> Result<(), slint::PlatformError> {
@@ -133,9 +153,20 @@ pub fn run(start_hidden: bool, no_tray: bool) -> Result<(), slint::PlatformError
     wire_dictation(&window, &runtime, &dictation);
     with_state(shortcuts::register);
 
-    // The mouse back button goes back, like Esc and Alt+Left. Home's checks rerun when the window gets focus.
+    // The mouse back button goes back, like Esc and Alt+Left. Home's checks rerun when the window gets focus. The
+    // window draws at `UI_SCALE` of the monitor's scale factor (Slint sets the monitor's when it creates the winit
+    // window, before the first event).
     let weak = window.as_weak();
-    window.window().on_winit_window_event(move |_, event| {
+    window.window().on_winit_window_event(move |slint_window, event| {
+        if let winit::event::WindowEvent::ScaleFactorChanged { scale_factor, .. } = event {
+            set_ui_scale(slint_window, *scale_factor as f32);
+            return EventResult::PreventDefault;
+        }
+        if let Some(monitor) = slint_window.with_winit_window(|w| w.scale_factor() as f32)
+            && (slint_window.scale_factor() - monitor * UI_SCALE).abs() > 1e-4
+        {
+            set_ui_scale(slint_window, monitor);
+        }
         match event {
             winit::event::WindowEvent::MouseInput {
                 state: winit::event::ElementState::Pressed,

@@ -54,6 +54,9 @@ Throwaway code stayed in the session scratch directory; none of it is in the rep
   text (M4), close-to-tray (M4). All of these were done in M2–M4.
 - **Small visual differences from Android**: the dropdown panel fades in (no scale-Y, no fade-out: Slint closes popups
   at once); the multi-line field grows without the 10-line cap; text line heights use the font's natural height.
+- **Desktop sizing** (differs from Android's 1 dp = 1 px): the window draws at 0.9 of the monitor's scale factor
+  (`ui::UI_SCALE`, a winit event filter), resizes freely (opens 900 x 800, min 460 x 400) and pages centre a column at
+  most 660 px wide (about 600 screen px); the Slint badge on About keeps its 380 px width.
 
 ## M2 decisions
 - **Provider interface**: `SpeechToTextProvider` returns boxed futures (dyn-compatible); a session's audio is an

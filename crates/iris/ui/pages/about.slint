@@ -46,7 +46,13 @@ export component AboutPage inherits PageScaffold {
     }
     Section {
         title: "Built with";
-        AboutSlint { }
+        // Centred at its width in the narrowest window (it grows with its width).
+        HorizontalLayout {
+            alignment: center;
+            AboutSlint {
+                preferred-width: 380px;
+            }
+        }
     }
     Section {
         title: "Licences";
