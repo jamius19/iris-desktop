@@ -382,9 +382,17 @@ export component ModelCombobox inherits FieldGroup {
         }
     }
 
+    // Showing a popup takes the focus (and closing it gives it back): the field keeps it, so typing still filters. Its
+    // focus is cleared first so the panel has none to give back; a blur closes the panel without refocusing the field.
     function show-list() {
         if root.filtered.length > 0 {
-            panel.show();
+            if input.has-focus {
+                input.clear-focus();
+                panel.show();
+                input.focus();
+            } else {
+                panel.show();
+            }
         }
     }
 

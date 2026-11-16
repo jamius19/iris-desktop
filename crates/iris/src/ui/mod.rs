@@ -191,7 +191,11 @@ pub fn run(start_hidden: bool, no_tray: bool) -> Result<(), slint::PlatformError
         window.show()?;
     }
     with_state(update::check);
-    slint::run_event_loop_until_quit()
+    let result = slint::run_event_loop_until_quit();
+    // Dropped while its threads still run. Left in the thread-local, Windows drops it during process exit, after the
+    // other threads were ended, and the runtime's shutdown waits for them forever (`taskkill /F` fails).
+    drop(STATE.with(|state| state.borrow_mut().take()));
+    result
 }
 
 /// Quits after committing a focused text field: its commit is a change handler, which the loop runs at the start of

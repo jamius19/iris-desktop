@@ -83,6 +83,8 @@ cargo test -p iris -- --ignored --test-threads=1`.
 - Slint: a child without `x` is centred in a non-layout parent; set `x: 0` for left-aligned fills.
 - Slint: `@children` can't sit inside an `if`; elements inside `if` can't be referenced from outside it; global
   callbacks can't be handled in `.slint` (route through Rust, e.g. `Nav.focus-root`).
+- Slint: `PopupWindow.show()` takes the focus from the focused item and `close()` gives it back, so a `changed
+  has-focus` that opens/closes a popup loops ("long callback/instantiation chain"); see `ModelCombobox.show-list`.
 - Slint 1.18 codegen bug: assigning a `let` string to a property and then comparing it moves it; compare the property.
 - The software renderer drops sub-pixel lines (separators use `1phx`) and doesn't rotate images.
 - The window's own `FocusScope` must hold focus for Esc / Alt+Left; fields hand focus back with `Nav.focus-root()`.
@@ -98,11 +100,13 @@ cargo test -p iris -- --ignored --test-threads=1`.
   hotkeys) must `Handle::enter()` first (warm-ups silently skip without one).
 - Python heredocs in Git Bash mangle backslash escapes (a `\n` in the text becomes a real line break); write such
   scripts to a file first, or use the Edit tool.
-- Python edits on Windows: open files with `encoding='utf-8'` (the default code page corrupts "…").
+- Python edits on Windows: open files with `encoding='utf-8'` (the default code page corrupts "…") and, for writes,
+  `newline=''` (else LF becomes CRLF).
 - `crates/iris/build.rs` stages transcribe-cpp libs into `crates/iris/transcribe-libs/` (gitignored, packaging) and,
   on Linux, next to the binary (`$ORIGIN` rpath). Windows and WSL builds share that staging dir.
 - The tray needs `slint::run_event_loop_until_quit` (closing the window only hides it); call `ui::quit` to quit
-  (it commits a focused field first).
+  (it commits a focused field first). `ui::run` drops the thread-local `AppState` itself after the loop: Windows
+  drops it during process exit after ending the other threads, so the runtime's shutdown hangs (`taskkill /F` fails).
 - `directories` ignores `APPDATA`/`LOCALAPPDATA` overrides on Windows: an app run always uses the real folders.
 - Running the app writes `%APPDATA%\jamius\Iris` / `%LOCALAPPDATA%\jamius\Iris` (Linux: `~/.config/iris`,
   `~/.local/share/iris`, `~/.cache/iris`).
