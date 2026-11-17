@@ -149,6 +149,7 @@ export component OverlayWindow inherits Window {
         width: max(0px, root.target-width - root.notice-x - root.pad-x);
         text: root.message;
         wrap: word-wrap;
+        overflow: elide;
         font-size: 12.5px;
         font-weight: 500;
     }

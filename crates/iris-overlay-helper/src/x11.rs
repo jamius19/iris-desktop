@@ -116,7 +116,7 @@ fn with_helper(f: impl FnOnce(&Rc<Helper>)) {
 }
 
 impl Helper {
-    fn handle(self: &Rc<Self>, message: ToHelper) {
+    fn handle(&self, message: ToHelper) {
         match message {
             ToHelper::Config(config) => {
                 *self.config.borrow_mut() = config;
@@ -131,7 +131,7 @@ impl Helper {
         }
     }
 
-    fn show(self: &Rc<Self>, state: OverlayState) {
+    fn show(&self, state: OverlayState) {
         self.shows.set(self.shows.get() + 1);
         apply(&self.window, &state, &self.config.borrow());
         *self.state.borrow_mut() = Some(state);
@@ -145,19 +145,7 @@ impl Helper {
             return;
         }
         if let Err(e) = self.window.show() {
-            return fail(format!("couldn't show the overlay: {e}"));
-        }
-        // The first show creates the X window: place it once it exists.
-        let weak = Rc::downgrade(self);
-        let placed = slint::spawn_local(async move {
-            let Some(helper) = weak.upgrade() else { return };
-            if helper.window.window().winit_window().await.is_ok() {
-                helper.place();
-                helper.update_input_region();
-            }
-        });
-        if let Err(e) = placed {
-            eprintln!("iris-overlay: couldn't place the overlay: {e}");
+            fail(format!("couldn't show the overlay: {e}"));
         }
     }
 
