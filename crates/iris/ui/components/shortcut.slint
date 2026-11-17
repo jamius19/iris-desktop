@@ -1,0 +1,131 @@
+/*
+* Author: Jamius Siam
+* Since: 16/11/2026
+*/
+
+// Desktop-only: a global shortcut as key caps in a field box. Click (or Enter/Space) → "Press keys…", then the keys
+// held so far, read by handy-keys (Rust); Backspace or leaving the field cancels; the trash resets the default.
+
+import { Theme, Type, Metrics, Icons } from "../theme.slint";
+import { Nav } from "../globals.slint";
+import { Label, FocusRing } from "basics.slint";
+import { IconAction } from "buttons.slint";
+import { FieldGroup } from "rows.slint";
+
+export component ShortcutField inherits FieldGroup {
+    // The binding's keys as shown ("Ctrl", "Space").
+    in property <[string]> caps;
+    in property <bool> recording;
+    // While recording: the keys held so far.
+    in property <[string]> pressed;
+    callback record();
+    callback stop-recording();
+    callback reset();
+
+    HorizontalLayout {
+        spacing: 4px;
+        box := Rectangle {
+            horizontal-stretch: 1;
+            min-height: Metrics.control-height;
+            border-radius: Metrics.control-radius;
+            border-width: 1px;
+            border-color: root.recording ? Theme.field-border-focused : Theme.field-border;
+            animate border-color { duration: 150ms; }
+            accessible-role: button;
+            accessible-label: root.label;
+            accessible-description: root.recording ? "Press keys…" : "Change shortcut";
+            accessible-action-default => { root.record(); }
+
+            touch := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    if !root.recording {
+                        scope.focus();
+                        root.record();
+                    }
+                }
+            }
+            if touch.has-hover && !root.recording: Rectangle {
+                border-radius: parent.border-radius;
+                background: Theme.hover-overlay;
+            }
+            HorizontalLayout {
+                padding-left: root.recording && root.pressed.length == 0 ? 11px : 7px;
+                padding-right: 7px;
+                spacing: 4px;
+                alignment: start;
+                if root.recording && root.pressed.length == 0: Label {
+                    text: "Press keys…";
+                    style: Type.field;
+                    color: Theme.muted;
+                    wrap: no-wrap;
+                }
+                if !root.recording || root.pressed.length > 0: HorizontalLayout {
+                    spacing: 4px;
+                    for cap in root.recording ? root.pressed : root.caps: VerticalLayout {
+                        alignment: center;
+                        Rectangle {
+                            border-radius: 4px;
+                            background: Theme.control;
+                            HorizontalLayout {
+                                padding-left: 7px;
+                                padding-right: 7px;
+                                padding-top: 3px;
+                                padding-bottom: 3px;
+                                Label {
+                                    text: cap;
+                                    style: Type.subtitle;
+                                    color: Theme.on-control;
+                                    wrap: no-wrap;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // Keeps keyboard focus while recording, so Backspace cancels here and Esc never goes back a page.
+            // Not focused by the press itself: that would take the press from the TouchArea below.
+            scope := FocusScope {
+                focus-on-click: false;
+                key-pressed(event) => {
+                    if root.recording {
+                        if event.text == Key.Backspace {
+                            root.stop-recording();
+                            Nav.focus-root();
+                        }
+                        return accept;
+                    }
+                    // Not recording: Esc only drops the focus, as the listener may end a recording on Esc's
+                    // release before the window's Esc press gets here; repeats of a held Esc are swallowed
+                    // without dropping the focus.
+                    if event.text == Key.Escape {
+                        if !event.repeat {
+                            Nav.focus-root();
+                        }
+                        return accept;
+                    }
+                    if event.text == Key.Return || event.text == " " {
+                        root.record();
+                        return accept;
+                    }
+                    reject
+                }
+                changed has-focus => {
+                    if !self.has-focus && root.recording {
+                        root.stop-recording();
+                    }
+                }
+            }
+            if scope.has-focus && !root.recording: FocusRing {
+                width: parent.width + 8px;
+                height: parent.height + 8px;
+                radius: parent.border-radius;
+            }
+        }
+        IconAction {
+            icon: Icons.trash;
+            label: "Reset to default";
+            clicked => { root.reset(); }
+        }
+    }
+}

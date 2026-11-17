@@ -1,0 +1,13 @@
+#!/bin/sh
+# Author: Jamius Siam
+# Since: 16/11/2026
+#
+# Reloads udev without the removed rule and re-triggers the same devices as postinst. Skipped without a running udev
+# (chroot, container).
+set -e
+
+if [ "$1" = remove ] && [ -d /run/udev ]; then
+    udevadm control --reload || true
+    udevadm trigger --action=change --subsystem-match=input --property-match=ID_INPUT_KEYBOARD=1 || true
+    udevadm trigger --action=change --subsystem-match=misc --sysname-match=uinput || true
+fi

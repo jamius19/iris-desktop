@@ -1,0 +1,10 @@
+# Author: Jamius Siam
+# Since: 16/11/2026
+#
+# Grants the user of the active seat exactly two things, through uaccess ACLs:
+# - read access to keyboard event devices only (ID_INPUT_KEYBOARD; not mice, touchpads, joysticks or other input),
+#   for Iris's global shortcut via handy-keys;
+# - access to /dev/uinput to create virtual input devices, for ydotoold run as that user (Wayland paste).
+# uaccess rules must sort before 73-seat-late.rules, so the number stays below 73.
+SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_KEYBOARD}=="1", TAG+="uaccess"
+SUBSYSTEM=="misc", KERNEL=="uinput", OPTIONS+="static_node=uinput", TAG+="uaccess"

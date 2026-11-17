@@ -1,0 +1,228 @@
+/*
+* Author: Jamius Siam
+* Since: 16/11/2026
+*/
+
+// Android `ui/components/{Basics,Surfaces,Rows}.kt` building blocks.
+
+import { Theme, Type, TextStyle, Metrics } from "../theme.slint";
+
+export component Label inherits Text {
+    in property <TextStyle> style: Type.title;
+    font-family: style.family;
+    font-weight: style.weight;
+    font-size: style.size;
+    color: Theme.text;
+    wrap: word-wrap;
+    vertical-alignment: center;
+}
+
+// A Lucide icon (drawn white) or a mark, tinted.
+export component Icon inherits Image {
+    in property <color> tint: Theme.text;
+    colorize: tint;
+    image-fit: contain;
+    accessible-role: none;
+}
+
+// Desktop addition: the keyboard focus ring, 2 px of `focus-ring` 2 px outside the parent (the use site sets the size
+// to the parent's + 8 px).
+export component FocusRing inherits Rectangle {
+    in property <length> radius;
+    x: -4px;
+    y: -4px;
+    border-width: 2px;
+    border-color: Theme.focus-ring;
+    border-radius: self.radius + 4px;
+}
+
+// 0.5 px line between the items of a settings card.
+export component Separator inherits Rectangle {
+    // 0.5 px on Android; one physical pixel here so the software renderer never drops it.
+    height: 1phx;
+    background: Theme.separator;
+}
+
+// 1 px line between the Home Services rows.
+export component ServicesDivider inherits Rectangle {
+    height: 1px;
+    background: Theme.services-divider;
+}
+
+// The card with the design's soft shadow, items 15 px apart. `clickable`: the whole card is one button (hover and
+// press overlays, focus ring, Enter/Space).
+export component Card inherits Rectangle {
+    in property <length> vertical-padding: 14px;
+    in property <color> fill: Theme.card;
+    in property <bool> clickable;
+    in property <string> button-label;
+    callback clicked();
+    property <bool> keyboard-focus;
+
+    background: self.fill;
+    border-radius: Metrics.card-radius;
+    drop-shadow-color: Theme.card-shadow;
+    drop-shadow-offset-y: 3px;
+    drop-shadow-blur: 3px;
+
+    VerticalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        padding-top: root.vertical-padding;
+        padding-bottom: root.vertical-padding;
+        spacing: 14px;
+        @children
+    }
+
+    if root.clickable: Rectangle {
+        accessible-role: button;
+        accessible-label: root.button-label;
+        accessible-action-default => { root.clicked(); }
+        Rectangle {
+            border-radius: Metrics.card-radius;
+            background: touch.pressed ? Theme.press-overlay : touch.has-hover ? Theme.hover-overlay : transparent;
+            animate background { duration: 100ms; }
+        }
+        touch := TouchArea {
+            mouse-cursor: pointer;
+            clicked => {
+                focus.focus();
+                root.clicked();
+            }
+        }
+        focus := FocusScope {
+            focus-on-click: false;
+            focus-gained(reason) => { root.keyboard-focus = reason == FocusReason.tab-navigation; }
+            key-pressed(event) => {
+                if event.text == Key.Return || event.text == " " {
+                    root.clicked();
+                    return accept;
+                }
+                reject
+            }
+        }
+        if focus.has-focus && root.keyboard-focus: FocusRing {
+            width: root.width + 8px;
+            height: root.height + 8px;
+            radius: Metrics.card-radius;
+        }
+    }
+}
+
+// A section heading over one card (14 px extra gap above).
+export component Section inherits VerticalLayout {
+    in property <string> title;
+    padding-top: 13px;
+    spacing: 14px;
+    Label {
+        text: root.title;
+        style: Type.section-heading;
+        accessible-role: text;
+    }
+    Card {
+        @children
+    }
+}
+
+// Icon column (24 px wide, icon top-padded) 11 px before the content, top aligned.
+export component IconRow inherits HorizontalLayout {
+    in property <image> icon;
+    in property <length> icon-size: 22px;
+    in property <length> icon-top-padding: 2px;
+    spacing: 10px;
+    VerticalLayout {
+        width: 22px;
+        padding-top: root.icon-top-padding;
+        alignment: start;
+        HorizontalLayout {
+            alignment: center;
+            Icon {
+                source: root.icon;
+                width: root.icon-size;
+                height: root.icon-size;
+            }
+        }
+    }
+    // Explicit width: wrapped text inside a horizontal layout otherwise gets a one-line height.
+    VerticalLayout {
+        width: root.width - 32px;
+        alignment: start;
+        @children
+    }
+}
+
+// A 24 px outlined box (radius 4) around a provider's 14 px mark.
+export component ProviderIconBox inherits Rectangle {
+    in property <image> icon;
+    in property <bool> tint;
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    border-width: 1px;
+    border-color: Theme.on-control.with-alpha(0.3);
+    Image {
+        source: root.icon;
+        width: 13px;
+        height: 13px;
+        image-fit: contain;
+        colorize: root.tint ? Theme.on-control : transparent;
+        accessible-role: none;
+    }
+}
+
+// An underlined link in the helper style.
+export component Link inherits Rectangle {
+    in property <string> text;
+    in property <color> text-color: Theme.muted;
+    callback clicked();
+    property <bool> keyboard-focus;
+    min-height: label.preferred-height;
+    accessible-role: button;
+    accessible-label: self.text;
+    accessible-action-default => { self.clicked(); }
+
+    label := StyledText {
+        width: 100%;
+        text: @markdown("<u>\{root.text}</u>");
+        default-color: root.text-color;
+        default-font-family: "Inter";
+        default-font-size: 11px;
+    }
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+    focus := FocusScope {
+        focus-on-click: false;
+        focus-gained(reason) => { root.keyboard-focus = reason == FocusReason.tab-navigation; }
+        key-pressed(event) => {
+            if event.text == Key.Return || event.text == " " {
+                root.clicked();
+                return accept;
+            }
+            reject
+        }
+    }
+    if focus.has-focus && root.keyboard-focus: FocusRing {
+        width: root.width + 8px;
+        height: root.height + 8px;
+        radius: 2px;
+    }
+}
+
+// Android `ProgressBar.kt`: a 3 px line like the slider's track, `fraction` (0..1) filled in the accent colour.
+export component ProgressBar inherits Rectangle {
+    in property <float> fraction;
+    height: 3px;
+    border-radius: 1.5px;
+    background: Theme.track;
+    accessible-role: progress-indicator;
+    accessible-value: round(clamp(root.fraction, 0, 1) * 100) + "%";
+    Rectangle {
+        x: 0;
+        width: max(parent.height, parent.width * clamp(root.fraction, 0, 1));
+        visible: root.fraction > 0;
+        border-radius: parent.border-radius;
+        background: Theme.accent;
+    }
+}

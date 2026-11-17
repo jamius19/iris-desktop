@@ -1,0 +1,9 @@
+Iris desktop
+Copyright 2026 Jamius Siam
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product includes code ported from Handy (https://github.com/cjpais/Handy), MIT License,
+Copyright (c) 2025 CJ Pais. See assets/licenses/handy_LICENSE.txt.
+
+Third-party fonts, icons and libraries are listed in docs/third-party.md with their licences in assets/licenses/.

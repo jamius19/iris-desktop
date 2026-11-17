@@ -1,0 +1,165 @@
+/*
+* Author: Jamius Siam
+* Since: 16/11/2026
+*/
+
+// Desktop-only page: the global shortcut (Handy's hold-or-toggle coordinator), text insertion (Handy's paste
+// settings), sounds and startup.
+
+import { Metrics } from "../theme.slint";
+import { Prefs } from "../globals.slint";
+import { Section, Separator } from "../components/basics.slint";
+import { SwitchRow, SliderGroup, ValueFormat } from "../components/rows.slint";
+import { SelectField } from "../components/dropdowns.slint";
+import { ShortcutField } from "../components/shortcut.slint";
+import { PageScaffold } from "../components/page.slint";
+
+export component DictationPage inherits PageScaffold {
+    title: "Dictation Settings";
+
+    Section {
+        title: "Shortcut";
+        ShortcutField {
+            label: "Transcribe Shortcut";
+            caps: Prefs.shortcut-transcribe-caps;
+            recording: Prefs.recording-shortcut == "transcribe";
+            pressed: Prefs.recording-caps;
+            error: Prefs.shortcut-transcribe-error;
+            helper: Prefs.wayland
+                ? "On Wayland without keyboard access, bind `iris --toggle-transcription` in your desktop's "
+                    + "keyboard settings."
+                : "";
+            record => { Prefs.record-shortcut("transcribe"); }
+            stop-recording => { Prefs.stop-recording-shortcut(); }
+            reset => { Prefs.reset-shortcut("transcribe"); }
+        }
+        Separator { }
+        SelectField {
+            label: "Activation";
+            options: [
+                { id: "hold_or_toggle", label: "Hold or Toggle" },
+                { id: "toggle", label: "Toggle" },
+                { id: "push_to_talk", label: "Push to Talk" },
+            ];
+            selected: Prefs.shortcut-activation;
+            helper: "Hold or Toggle: hold to talk, or tap to start and tap again to stop.";
+            picked(id) => { self.error = Prefs.set-string("shortcut_activation", id); }
+        }
+        Separator { }
+        ShortcutField {
+            label: "Cancel Shortcut";
+            caps: Prefs.shortcut-cancel-caps;
+            recording: Prefs.recording-shortcut == "cancel";
+            pressed: Prefs.recording-caps;
+            helper: "Active only while dictating.";
+            record => { Prefs.record-shortcut("cancel"); }
+            stop-recording => { Prefs.stop-recording-shortcut(); }
+            reset => { Prefs.reset-shortcut("cancel"); }
+        }
+    }
+    Section {
+        title: "Text Insertion";
+        SelectField {
+            label: "Paste Method";
+            options: [
+                { id: "ctrl_v", label: "Ctrl+V" },
+                { id: "direct", label: "Direct typing" },
+                { id: "shift_insert", label: "Shift+Insert" },
+                { id: "ctrl_shift_v", label: "Ctrl+Shift+V" },
+            ];
+            selected: Prefs.paste-method;
+            helper: Prefs.wayland
+                ? "Direct typing uses ydotool and can mangle non-English text. Ctrl+V is more reliable." : "";
+            picked(id) => { self.error = Prefs.set-string("paste_method", id); }
+        }
+        Separator { }
+        SwitchRow {
+            title: "Add Trailing Space";
+            checked: Prefs.append-trailing-space;
+            toggled(on) => { self.error = Prefs.set-bool("append_trailing_space", on); }
+        }
+        Separator { }
+        SwitchRow {
+            title: "Restore Clipboard";
+            subtitle: "Puts back what was on the clipboard after pasting.";
+            checked: Prefs.restore-clipboard;
+            toggled(on) => { self.error = Prefs.set-bool("restore_clipboard", on); }
+        }
+        Separator { }
+        SliderGroup {
+            label: "Paste Delay";
+            subtitle: "Wait before sending the paste keys.";
+            value: Prefs.paste-delay-ms;
+            minimum: 0;
+            maximum: 500;
+            step: 10;
+            format: ValueFormat.milliseconds;
+            released(v) => { self.error = Prefs.set-int("paste_delay_ms", v); }
+        }
+        Separator { }
+        SliderGroup {
+            label: "Restore Delay";
+            subtitle: "Wait after pasting before restoring the clipboard.";
+            value: Prefs.paste-delay-after-ms;
+            minimum: 0;
+            maximum: 500;
+            step: 10;
+            format: ValueFormat.milliseconds;
+            released(v) => { self.error = Prefs.set-int("paste_delay_after_ms", v); }
+        }
+    }
+    Section {
+        title: "Sounds";
+        SwitchRow {
+            title: "Start and Stop Sounds";
+            checked: Prefs.feedback-sounds;
+            toggled(on) => { self.error = Prefs.set-bool("feedback_sounds", on); }
+        }
+        Separator { }
+        SliderGroup {
+            opacity: Prefs.feedback-sounds ? 1 : Metrics.disabled-alpha;
+            label: "Volume";
+            value: Prefs.feedback-volume-percent;
+            minimum: 0;
+            maximum: 100;
+            step: 10;
+            format: ValueFormat.percent;
+            released(v) => { self.error = Prefs.set-int("feedback_volume_percent", v); }
+        }
+        Separator { }
+        SwitchRow {
+            title: "Mute Other Audio";
+            subtitle: "Mutes other audio while you dictate.";
+            checked: Prefs.mute-while-recording;
+            toggled(on) => { self.error = Prefs.set-bool("mute_while_recording", on); }
+        }
+        Separator { }
+        SwitchRow {
+            title: "Lower Other Audio";
+            subtitle: "Lowers other audio while you dictate.";
+            checked: Prefs.duck-while-recording;
+            toggled(on) => { self.error = Prefs.set-bool("duck_while_recording", on); }
+        }
+        Separator { }
+        SliderGroup {
+            opacity: Prefs.duck-while-recording ? 1 : Metrics.disabled-alpha;
+            label: "Lower By";
+            subtitle: "How much to lower it. 100% is silent.";
+            value: Prefs.duck-amount;
+            minimum: 0;
+            maximum: 100;
+            step: 10;
+            format: ValueFormat.percent;
+            released(v) => { self.error = Prefs.set-int("duck_amount", v); }
+        }
+    }
+    Section {
+        title: "Startup";
+        SwitchRow {
+            title: "Launch at Startup";
+            subtitle: "Starts hidden in the tray.";
+            checked: Prefs.launch-at-startup;
+            toggled(on) => { self.error = Prefs.set-bool("launch_at_startup", on); }
+        }
+    }
+}

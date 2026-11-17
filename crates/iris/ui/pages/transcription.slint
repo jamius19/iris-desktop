@@ -1,0 +1,288 @@
+/*
+* Author: Jamius Siam
+* Since: 16/11/2026
+*/
+
+// Android `ui/settings/TranscriptionPage.kt` + `OnDeviceSettings.kt`. Desktop: the on-device Accelerator, the
+// Microphone picker first in Audio, the desktop RAM guide.
+
+import { Icons, Theme, Type } from "../theme.slint";
+import { Prefs, Copy, App } from "../globals.slint";
+import { Card, Section, Separator, IconRow, Link, Label, ProgressBar } from "../components/basics.slint";
+import { SwitchRow, SliderGroup, FieldGroup, ValueFormat } from "../components/rows.slint";
+import { SmallButton, DangerButton } from "../components/buttons.slint";
+import { ApiKeyField, AutosaveTextField } from "../components/fields.slint";
+import { SelectField, ModelCombobox } from "../components/dropdowns.slint";
+import { PageScaffold } from "../components/page.slint";
+
+export component TranscriptionPage inherits PageScaffold {
+    title: "Transcription Settings";
+
+    Card {
+        vertical-padding: 14px;
+        IconRow {
+            icon: Icons.audio-lines;
+            icon-size: 20px;
+            icon-top-padding: 0px;
+            SelectField {
+                label: "Transcription Provider";
+                gap: 8px;
+                options: Prefs.stt-providers;
+                selected: Prefs.stt-provider-id;
+                helper: Prefs.stt-provider-note;
+                picked(id) => { self.error = Prefs.set-string("stt_provider_id", id); }
+            }
+        }
+    }
+
+    // On device has no key. Each provider's field is its own element, so unsaved input never carries over.
+    if !Prefs.stt-on-device: Section {
+        title: "Provider Settings";
+        if Prefs.stt-gateway: ApiKeyField {
+            is-set: Prefs.gateway-key-set;
+            unreadable: Prefs.gateway-key-unreadable;
+            set-helper: Copy.api-key-helper(true, "post processing");
+            unset-helper: Copy.api-key-helper(false, "post processing");
+            name: "gateway_api_key";
+        }
+        if Prefs.stt-deepgram: ApiKeyField {
+            is-set: Prefs.deepgram-key-set;
+            unreadable: Prefs.deepgram-key-unreadable;
+            set-helper: Copy.api-key-helper(true, "");
+            unset-helper: Copy.api-key-helper(false, "");
+            name: "deepgram_api_key";
+        }
+        if Prefs.stt-soniox: ApiKeyField {
+            is-set: Prefs.soniox-key-set;
+            unreadable: Prefs.soniox-key-unreadable;
+            set-helper: Copy.api-key-helper(true, "");
+            unset-helper: Copy.api-key-helper(false, "");
+            name: "soniox_api_key";
+        }
+        if !Prefs.stt-gateway && !Prefs.stt-deepgram && !Prefs.stt-soniox: ApiKeyField {
+            is-set: Prefs.openai-key-set;
+            unreadable: Prefs.openai-key-unreadable;
+            placeholder: "sk-…";
+            set-helper: Copy.api-key-helper(true, "");
+            unset-helper: Copy.api-key-helper(false, "");
+            name: "openai_api_key";
+        }
+        if Prefs.stt-soniox: Separator { }
+        if Prefs.stt-soniox: SelectField {
+            label: "Region";
+            options: Prefs.soniox-regions;
+            selected: Prefs.soniox-region;
+            helper: "Your Soniox project's region. The API key has to be region-specific as well.";
+            picked(id) => { self.error = Prefs.set-string("soniox_region", id); }
+        }
+    }
+
+    Section {
+        title: "Model Settings";
+        if Prefs.stt-on-device: SelectField {
+            label: "Speech-to-text Model";
+            options: Prefs.on-device-models;
+            selected: Prefs.on-device-stt-model;
+            helper: Prefs.on-device-model-helper;
+            picked(id) => { self.error = Prefs.set-string("on_device_stt_model", id); }
+        }
+        if Prefs.stt-on-device: Separator { }
+        // Android `OnDeviceModelSettings`: progress + Cancel, Deleting…, Downloaded + Delete, or Download (size).
+        if Prefs.stt-on-device: FieldGroup {
+            label: "Download";
+            error: Prefs.download-error;
+            helper: Prefs.other-downloading && !Prefs.model-downloaded ? "Another model is downloading." : "";
+            if Prefs.model-downloading: VerticalLayout {
+                spacing: 7px;
+                ProgressBar {
+                    fraction: Prefs.download-fraction;
+                }
+                HorizontalLayout {
+                    Label {
+                        text: Prefs.download-progress;
+                        style: Type.subtitle;
+                        color: Theme.muted;
+                        wrap: no-wrap;
+                        // Takes the row's spare width, so the button keeps its own.
+                        horizontal-stretch: 1;
+                    }
+                    SmallButton {
+                        text: "Cancel";
+                        clicked => { Prefs.cancel-download(); }
+                    }
+                }
+            }
+            if !Prefs.model-downloading && Prefs.model-deleting: Label {
+                text: "Deleting…";
+                style: Type.subtitle;
+                color: Theme.muted;
+            }
+            if !Prefs.model-downloading && !Prefs.model-deleting && Prefs.model-downloaded: HorizontalLayout {
+                VerticalLayout {
+                    Label {
+                        text: "Downloaded";
+                        style: Type.subtitle;
+                        color: Theme.enabled;
+                        wrap: no-wrap;
+                    }
+                    Label {
+                        text: Prefs.model-size;
+                        style: Type.subtitle;
+                        wrap: no-wrap;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    DangerButton {
+                        text: "Delete";
+                        clicked => { Prefs.delete-model(); }
+                    }
+                }
+            }
+            if !Prefs.model-downloading && !Prefs.model-deleting && !Prefs.model-downloaded && !Prefs.other-downloading:
+                HorizontalLayout {
+                    alignment: start;
+                    SmallButton {
+                        text: "Download (" + Prefs.model-size + ")";
+                        clicked => { Prefs.download-model(); }
+                    }
+                }
+        }
+        if Prefs.stt-on-device: Separator { }
+        if Prefs.stt-on-device: SelectField {
+            label: "Accelerator";
+            options: Prefs.accelerators;
+            selected: Prefs.local-accelerator;
+            helper: "Auto uses the GPU (Vulkan) when it works and falls back to the CPU.";
+            picked(id) => { self.error = Prefs.set-string("local_accelerator", id); }
+        }
+        if Prefs.stt-on-device: Link {
+            text: Prefs.on-device-licence;
+            clicked => { App.open-url(Prefs.on-device-licence-url); }
+        }
+        if Prefs.stt-gateway: ModelCombobox {
+            label: "Speech-to-text Model";
+            stored: Prefs.gateway-stt-model;
+            models: Prefs.stt-catalog.models;
+            refreshable: Prefs.stt-catalog.refreshable;
+            loaded: Prefs.stt-catalog.loaded;
+            loading: Prefs.stt-catalog.loading;
+            load-error: Prefs.stt-catalog.error;
+            load => { Prefs.load-stt-models(); }
+            helper: "Live/real-time models show text as you speak. Others transcribe after you stop.";
+            commit(draft) => { return Prefs.commit-text("gateway_stt_model", draft); }
+        }
+        if Prefs.stt-deepgram: ModelCombobox {
+            label: "Speech-to-text Model";
+            stored: Prefs.deepgram-stt-model;
+            models: Prefs.stt-catalog.models;
+            refreshable: Prefs.stt-catalog.refreshable;
+            loaded: Prefs.stt-catalog.loaded;
+            loading: Prefs.stt-catalog.loading;
+            load-error: Prefs.stt-catalog.error;
+            load => { Prefs.load-stt-models(); }
+            helper: "Deepgram models stream live by default unless realtime streaming is disabled below.";
+            commit(draft) => { return Prefs.commit-text("deepgram_stt_model", draft); }
+        }
+        if Prefs.stt-soniox: ModelCombobox {
+            label: "Speech-to-text Model";
+            stored: Prefs.soniox-stt-model;
+            models: Prefs.stt-catalog.models;
+            refreshable: Prefs.stt-catalog.refreshable;
+            loaded: Prefs.stt-catalog.loaded;
+            loading: Prefs.stt-catalog.loading;
+            load-error: Prefs.stt-catalog.error;
+            load => { Prefs.load-stt-models(); }
+            helper: "Real-time (rt) models show text as you speak. Async models transcribe after you stop.";
+            commit(draft) => { return Prefs.commit-text("soniox_stt_model", draft); }
+        }
+        if !Prefs.stt-on-device && !Prefs.stt-gateway && !Prefs.stt-deepgram && !Prefs.stt-soniox: ModelCombobox {
+            label: "Speech-to-text Model";
+            stored: Prefs.stt-model;
+            models: Prefs.stt-catalog.models;
+            refreshable: Prefs.stt-catalog.refreshable;
+            loaded: Prefs.stt-catalog.loaded;
+            loading: Prefs.stt-catalog.loading;
+            load-error: Prefs.stt-catalog.error;
+            load => { Prefs.load-stt-models(); }
+            helper: "Live/real-time models show text as you speak. Others transcribe after you stop.";
+            commit(draft) => { return Prefs.commit-text("stt_model", draft); }
+        }
+        if Prefs.stt-deepgram: Separator { }
+        if Prefs.stt-deepgram: SwitchRow {
+            title: "Disable Realtime Streaming";
+            subtitle: "Transcribe after you stop, about 44% cheaper.";
+            checked: Prefs.deepgram-upload;
+            toggled(on) => { self.error = Prefs.set-bool("deepgram_upload", on); }
+        }
+        if Prefs.takes-language: Separator { }
+        // Soniox has its own setting: it takes several languages.
+        if Prefs.stt-soniox: AutosaveTextField {
+            label: "Language Codes";
+            stored: Prefs.soniox-languages;
+            placeholder: "en, es, …";
+            helper: "Comma-separated language codes. Leave blank to auto-detect.";
+            commit(draft) => { return Prefs.commit-text("soniox_languages", draft); }
+        }
+        if !Prefs.stt-soniox && Prefs.takes-language: AutosaveTextField {
+            label: "Language Code";
+            stored: Prefs.stt-language;
+            placeholder: "en";
+            helper: Prefs.stt-on-device ? "Leave blank to auto-detect. Codes Whisper doesn't know auto-detect too."
+                : "Setting a language can improve accuracy. Leave blank to auto-detect.";
+            commit(draft) => { return Prefs.commit-text("stt_language", draft); }
+        }
+        Separator { }
+        // No network to wait for on device: Unload Model instead of the timeout.
+        if !Prefs.stt-on-device: SliderGroup {
+            label: "Timeout";
+            subtitle: "How long to wait for the final transcript after you stop.";
+            value: Prefs.stt-timeout-seconds;
+            minimum: 5;
+            maximum: 30;
+            format: ValueFormat.seconds;
+            released(v) => { self.error = Prefs.set-int("stt_timeout_seconds", v); }
+        }
+        if Prefs.stt-on-device: SelectField {
+            label: "Unload Model";
+            options: Prefs.unload-options;
+            selected: Prefs.on-device-unload-minutes;
+            helper: Prefs.unload-helper;
+            guide: Prefs.unload-guide;
+            picked(id) => { self.error = Prefs.set-int("on_device_unload_minutes", id.to-float()); }
+        }
+    }
+
+    Section {
+        title: "Audio";
+        SelectField {
+            label: "Microphone";
+            options: Prefs.microphones;
+            selected: Prefs.microphone-device;
+            helper: "Used for dictation.";
+            picked(id) => { self.error = Prefs.set-string("microphone_device", id); }
+        }
+        Separator { }
+        SwitchRow {
+            title: "Skip Silence";
+            subtitle: Prefs.skip-silence-subtitle;
+            checked: Prefs.vad-enabled;
+            toggled(on) => { self.error = Prefs.set-bool("vad_enabled", on); }
+        }
+        // Soniox real-time bills wall-clock stream time: a speed-up saves nothing, so it's never applied.
+        if !Prefs.soniox-live: Separator { }
+        if !Prefs.soniox-live: SliderGroup {
+            label: "Audio Speed";
+            subtitle: Prefs.stt-on-device ? "Speeds up the audio (pitch kept), so it transcribes faster."
+                : "Speeds up the audio sent (pitch kept), so less is billed.";
+            value: Prefs.stt-speed-percent;
+            minimum: 100;
+            maximum: 200;
+            step: 10;
+            format: ValueFormat.speed;
+            helper: Prefs.stt-on-device ? "Higher speeds can lower accuracy."
+                : "Higher speeds can lower accuracy; services with a per-request minimum may not save.";
+            released(v) => { self.error = Prefs.set-int("stt_speed_percent", v); }
+        }
+    }
+}

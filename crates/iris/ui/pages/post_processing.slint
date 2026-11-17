@@ -1,0 +1,457 @@
+/*
+* Author: Jamius Siam
+* Since: 16/11/2026
+*/
+
+// Android `ui/settings/PostProcessingPage.kt`, same copy.
+
+import { Theme, Type, Metrics, Icons } from "../theme.slint";
+import { Prefs, Copy, Nav, CommitResult, ProviderFormErrors } from "../globals.slint";
+import { Label, Card, Section, Separator, IconRow } from "../components/basics.slint";
+import { SmallButton, DangerButton, IconAction } from "../components/buttons.slint";
+import { NavCard, SwitchRow, SliderGroup, FieldGroup, Accordion, ValueFormat } from "../components/rows.slint";
+import { ApiKeyField, AutosaveTextField, DraftTextField, DraftApiKeyField } from "../components/fields.slint";
+import { SelectDropdown, SelectField, ModelCombobox } from "../components/dropdowns.slint";
+import { PageScaffold } from "../components/page.slint";
+
+// A custom provider's Provider Settings form (type, name, base URL, key): a draft for saved providers too, committed
+// by Save; the key trash only marks a stored key for removal (Save then needs a new key).
+component CustomProviderForm inherits VerticalLayout {
+    in property <string> provider-id;
+    in property <bool> is-new;
+    in property <bool> key-stored;
+    // The keychain couldn't be read, so whether a key is saved is unknown.
+    in property <bool> key-unreadable;
+    in property <string> initial-name;
+    in property <string> initial-base-url;
+    // Bumped to focus the name field again.
+    in property <int> focus-request;
+    property <bool> remove-stored-key;
+    property <ProviderFormErrors> errors;
+    property <string> save-error;
+    property <int> op-seq: Prefs.key-op-seq;
+    property <bool> key-shown: self.key-stored && !self.remove-stored-key;
+
+    changed focus-request => {
+        name.focus-input();
+    }
+
+    // Another saved provider: drop every draft of the previous one (Android `key(custom.id)`).
+    changed provider-id => {
+        name.text = root.initial-name;
+        base-url.text = root.initial-base-url;
+        key.text = "";
+        root.remove-stored-key = false;
+        root.errors = { name: "", base-url: "", api-key: "" };
+        root.save-error = "";
+    }
+
+    changed op-seq => {
+        if Prefs.key-op-target == "provider:" + self.provider-id {
+            self.save-error = Prefs.key-op-error;
+            if self.save-error == "" {
+                key.text = "";
+                self.remove-stored-key = false;
+            }
+        }
+    }
+
+    spacing: 14px;
+    FieldGroup {
+        label: "Provider Type";
+        SelectDropdown {
+            label: "Provider Type";
+            options: [{ id: "openai-compatible", label: "OpenAI Compatible" }];
+            selected: "openai-compatible";
+        }
+    }
+    Separator { }
+    name := DraftTextField {
+        label: "Provider Name";
+        text: root.initial-name;
+        placeholder: "My provider";
+        error: root.errors.name;
+        edited => { root.errors.name = ""; }
+        done => { Nav.focus-root(); }
+    }
+    Separator { }
+    base-url := DraftTextField {
+        label: "Provider Base URL";
+        text: root.initial-base-url;
+        placeholder: "https://api.example.com/v1";
+        helper: "Enter your OpenAI-compatible base URL here.";
+        error: root.errors.base-url;
+        edited => { root.errors.base-url = ""; }
+        done => { Nav.focus-root(); }
+    }
+    Separator { }
+    key := DraftApiKeyField {
+        stored-shown: root.key-shown;
+        unreadable: root.key-unreadable;
+        error: root.errors.api-key;
+        edited => { root.errors.api-key = ""; }
+        remove-stored => { root.remove-stored-key = true; }
+    }
+    VerticalLayout {
+        spacing: 7px;
+        HorizontalLayout {
+            spacing: 7px;
+            alignment: start;
+            SmallButton {
+                text: "Save";
+                clicked => {
+                    root.errors = Prefs.check-custom-provider(
+                        root.provider-id, name.text, base-url.text, key.text, root.key-shown);
+                    if root.errors.name == "" && root.errors.base-url == "" && root.errors.api-key == "" {
+                        Prefs.save-custom-provider(root.provider-id, name.text, base-url.text, key.text);
+                    }
+                }
+            }
+            if !root.is-new: DangerButton {
+                text: "Delete Provider";
+                clicked => { Prefs.delete-custom-provider(root.provider-id); }
+            }
+        }
+        if root.save-error != "": Label {
+            text: root.save-error;
+            style: Type.helper;
+            color: Theme.failure;
+        }
+    }
+}
+
+// Reasoning level: "Model default" plus the saved model's efforts from the catalogue, or every level the APIs accept
+// when that's unknown. A saved value the model's known list lacks is flagged (and still sent).
+component ReasoningField inherits SelectField {
+    label: "Reasoning Level";
+    options: Prefs.reasoning-options;
+    helper: "Model default lets the provider decide.";
+    in-out property <string> save-error;
+    error: self.save-error != "" ? self.save-error : Prefs.reasoning-error;
+}
+
+// The "Provider Options" accordion: a JSON text area that autosaves; blank clears, invalid JSON isn't saved.
+component ProviderOptionsField inherits Accordion {
+    in property <string> stored;
+    in property <string> hint;
+    callback commit(draft: string) -> CommitResult;
+    title: "Provider Options";
+    status: self.stored == "" ? "No provider option" : "Provider option set";
+    AutosaveTextField {
+        label: "JSON";
+        stored: root.stored;
+        placeholder: "{ }";
+        helper: root.hint;
+        multi-line: true;
+        mono: true;
+        commit(draft) => { return root.commit(draft); }
+    }
+}
+
+export component PostProcessingPage inherits PageScaffold {
+    callback open-custom-words();
+    property <bool> draft: Prefs.draft-id != "";
+    property <string> pick-error;
+    property <int> focus-draft-name;
+    title: "Post Processing Settings";
+
+    Card {
+        vertical-padding: 14px;
+        SwitchRow {
+            title: "Remove Filler Words";
+            subtitle: "Remove common filler words like uh, um, hmm from the transcript.";
+            checked: Prefs.remove-filler-words;
+            icon: Icons.eraser;
+            has-icon: true;
+            toggled(on) => { self.error = Prefs.set-bool("remove_filler_words", on); }
+        }
+    }
+    NavCard {
+        icon: Icons.spell-check;
+        title: "Custom Words (Beta)";
+        subtitle: "Names and terms Iris should spell right.";
+        note: Prefs.custom-words-note;
+        note-is-warning: Prefs.custom-words-note-is-warning;
+        clicked => { root.open-custom-words(); }
+    }
+    Card {
+        vertical-padding: 14px;
+        SwitchRow {
+            title: "AI Cleanup";
+            subtitle: "Polish the transcript with an LLM before it's inserted.";
+            checked: Prefs.cleanup-enabled;
+            icon: Icons.sparkles;
+            has-icon: true;
+            toggled(on) => { self.error = Prefs.set-bool("cleanup_enabled", on); }
+        }
+    }
+
+    // Dimmed while cleanup is off, still editable.
+    VerticalLayout {
+        spacing: 14px;
+        opacity: Prefs.cleanup-enabled ? 1 : Metrics.disabled-alpha;
+        animate opacity { duration: 150ms; }
+
+        Card {
+            vertical-padding: 14px;
+            IconRow {
+                icon: Icons.cloud;
+                icon-top-padding: 0px;
+                FieldGroup {
+                    label: "Post Processing Provider";
+                    gap: 8px;
+                    error: root.pick-error;
+                    HorizontalLayout {
+                        spacing: 7px;
+                        SelectDropdown {
+                            label: "Post Processing Provider";
+                            options: Prefs.cleanup-providers;
+                            selected: root.draft ? Prefs.draft-id : Prefs.cleanup-provider-id;
+                            picked(id) => { root.pick-error = Prefs.set-string("cleanup_provider_id", id); }
+                        }
+                        IconAction {
+                            icon: Icons.plus;
+                            label: "New provider";
+                            bordered: true;
+                            width: Metrics.control-height;
+                            clicked => {
+                                if root.draft {
+                                    root.focus-draft-name += 1;
+                                } else {
+                                    Prefs.new-draft();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if root.draft: Section {
+            title: "Provider Settings";
+            CustomProviderForm {
+                provider-id: Prefs.draft-id;
+                is-new: true;
+                focus-request: root.focus-draft-name;
+                init => { root.focus-draft-name += 1; }
+            }
+        }
+
+        if !root.draft && Prefs.custom-selected: VerticalLayout {
+            spacing: 14px;
+            Section {
+                title: "Provider Settings";
+                CustomProviderForm {
+                    provider-id: Prefs.custom.id;
+                    key-stored: Prefs.custom.key-set;
+                    key-unreadable: Prefs.custom.key-unreadable;
+                    initial-name: Prefs.custom.name;
+                    initial-base-url: Prefs.custom.base-url;
+                }
+            }
+            Section {
+                title: "Model Settings";
+                ModelCombobox {
+                    label: "Cleanup Model";
+                    stored: Prefs.custom.model;
+                    models: Prefs.cleanup-catalog.models;
+                    refreshable: Prefs.cleanup-catalog.refreshable;
+                    loaded: Prefs.cleanup-catalog.loaded;
+                    loading: Prefs.cleanup-catalog.loading;
+                    load-error: Prefs.cleanup-catalog.error;
+                    load => { Prefs.load-cleanup-models(); }
+                    helper: "Must support structured output while Send JSON Schema is on.";
+                    commit(draft) => { return Prefs.commit-text("custom_cleanup_model:" + Prefs.custom.id, draft); }
+                }
+                Separator { }
+                ReasoningField {
+                    selected: Prefs.custom.reasoning-effort;
+                    picked(id) => {
+                        self.save-error = Prefs.set-string("custom_cleanup_reasoning_effort:" + Prefs.custom.id, id);
+                    }
+                }
+                Separator { }
+                SliderGroup {
+                    label: "Timeout";
+                    subtitle: "If cleanup takes longer, the original text is inserted.";
+                    value: Prefs.cleanup-timeout-seconds;
+                    minimum: 1;
+                    maximum: 30;
+                    format: ValueFormat.seconds;
+                    released(v) => { self.error = Prefs.set-int("cleanup_timeout_seconds", v); }
+                }
+                Separator { }
+                SwitchRow {
+                    title: "Send JSON Schema";
+                    subtitle: "Requests structured output (strict JSON schema).";
+                    checked: Prefs.custom.send-json-schema;
+                    toggled(on) => {
+                        self.error = Prefs.set-bool("custom_cleanup_send_json_schema:" + Prefs.custom.id, on);
+                    }
+                }
+            }
+        }
+
+        if !root.draft && !Prefs.custom-selected && Prefs.cleanup-open-router: VerticalLayout {
+            spacing: 14px;
+            Section {
+                title: "Provider Settings";
+                ApiKeyField {
+                    is-set: Prefs.openrouter-key-set;
+                    unreadable: Prefs.openrouter-key-unreadable;
+                    placeholder: "sk-or-…";
+                    set-helper: Copy.api-key-helper(true, "");
+                    unset-helper: Copy.api-key-helper(false, "");
+                    name: "openrouter_api_key";
+                }
+            }
+            Section {
+                title: "Model Settings";
+                ModelCombobox {
+                    label: "Cleanup Model";
+                    stored: Prefs.open-router-cleanup-model;
+                    models: Prefs.cleanup-catalog.models;
+                    refreshable: Prefs.cleanup-catalog.refreshable;
+                    loaded: Prefs.cleanup-catalog.loaded;
+                    loading: Prefs.cleanup-catalog.loading;
+                    load-error: Prefs.cleanup-catalog.error;
+                    load => { Prefs.load-cleanup-models(); }
+                    helper: "Model must support structured output.";
+                    commit(draft) => { return Prefs.commit-text("openrouter_cleanup_model", draft); }
+                }
+                Separator { }
+                ReasoningField {
+                    selected: Prefs.open-router-cleanup-reasoning-effort;
+                    picked(id) => { self.save-error = Prefs.set-string("openrouter_cleanup_reasoning_effort", id); }
+                }
+                Separator { }
+                SliderGroup {
+                    label: "Timeout";
+                    subtitle: "If cleanup takes longer, the original text is inserted.";
+                    value: Prefs.cleanup-timeout-seconds;
+                    minimum: 1;
+                    maximum: 30;
+                    format: ValueFormat.seconds;
+                    released(v) => { self.error = Prefs.set-int("cleanup_timeout_seconds", v); }
+                }
+                Separator { }
+                ProviderOptionsField {
+                    stored: Prefs.open-router-cleanup-provider-options;
+                    hint: Prefs.openrouter-options-hint;
+                    commit(draft) => { return Prefs.commit-text("openrouter_cleanup_provider_options", draft); }
+                }
+            }
+        }
+
+        if !root.draft && !Prefs.custom-selected && !Prefs.cleanup-open-router: VerticalLayout {
+            spacing: 14px;
+            Section {
+                title: "Provider Settings";
+                ApiKeyField {
+                    is-set: Prefs.gateway-key-set;
+                    unreadable: Prefs.gateway-key-unreadable;
+                    set-helper: Copy.api-key-helper(true, "transcription");
+                    unset-helper: Copy.api-key-helper(false, "transcription");
+                    name: "gateway_api_key";
+                }
+            }
+            Section {
+                title: "Model Settings";
+                ModelCombobox {
+                    label: "Cleanup Model";
+                    stored: Prefs.cleanup-model;
+                    models: Prefs.cleanup-catalog.models;
+                    refreshable: Prefs.cleanup-catalog.refreshable;
+                    loaded: Prefs.cleanup-catalog.loaded;
+                    loading: Prefs.cleanup-catalog.loading;
+                    load-error: Prefs.cleanup-catalog.error;
+                    load => { Prefs.load-cleanup-models(); }
+                    helper: "Model must support structured output.";
+                    commit(draft) => { return Prefs.commit-text("cleanup_model", draft); }
+                }
+                Separator { }
+                ReasoningField {
+                    selected: Prefs.cleanup-reasoning-effort;
+                    picked(id) => { self.save-error = Prefs.set-string("cleanup_reasoning_effort", id); }
+                }
+                Separator { }
+                SliderGroup {
+                    label: "Timeout";
+                    subtitle: "If cleanup takes longer, the original text is inserted.";
+                    value: Prefs.cleanup-timeout-seconds;
+                    minimum: 1;
+                    maximum: 30;
+                    format: ValueFormat.seconds;
+                    released(v) => { self.error = Prefs.set-int("cleanup_timeout_seconds", v); }
+                }
+                Separator { }
+                ProviderOptionsField {
+                    stored: Prefs.cleanup-provider-options;
+                    hint: Prefs.gateway-options-hint;
+                    commit(draft) => { return Prefs.commit-text("cleanup_provider_options", draft); }
+                }
+            }
+        }
+
+        Section {
+            title: "Prompts";
+            prompt-group := FieldGroup {
+                label: "Active Prompt";
+                helper: "Cleanup uses this prompt.";
+                HorizontalLayout {
+                    spacing: 7px;
+                    SelectDropdown {
+                        label: "Active Prompt";
+                        options: Prefs.prompt-options;
+                        selected: Prefs.active-prompt.id;
+                        picked(id) => { prompt-group.error = Prefs.set-string("cleanup_active_prompt_id", id); }
+                    }
+                    IconAction {
+                        icon: Icons.plus;
+                        label: "New prompt";
+                        bordered: true;
+                        width: Metrics.control-height;
+                        clicked => {
+                            // Commit the old prompt's drafts first, then show the new prompt's values at once (the
+                            // fields' `changed stored` runs an event-loop iteration later, after the focus moves).
+                            prompt-name.commit-now();
+                            prompt-text.commit-now();
+                            prompt-group.error = Prefs.new-prompt();
+                            prompt-name.show-stored();
+                            prompt-text.show-stored();
+                            prompt-name.focus-input();
+                            prompt-name.select-all();
+                        }
+                    }
+                    IconAction {
+                        icon: Icons.trash;
+                        tint: Theme.failure;
+                        label: "Delete prompt " + Prefs.active-prompt.name;
+                        bordered: true;
+                        enabled: Prefs.prompts.length > 1;
+                        width: Metrics.control-height;
+                        clicked => { prompt-group.error = Prefs.delete-prompt(Prefs.active-prompt.id); }
+                    }
+                }
+            }
+            Separator { }
+            prompt-name := AutosaveTextField {
+                label: "Name";
+                stored: Prefs.active-prompt.name;
+                placeholder: "Prompt name";
+                clearable: false;
+                commit(draft) => { return Prefs.commit-text("prompt_name", draft); }
+            }
+            Separator { }
+            prompt-text := AutosaveTextField {
+                label: "Prompt";
+                subtitle: "Instructions for the post-processing model.";
+                stored: Prefs.active-prompt.system-prompt;
+                placeholder: "Instructions for the model";
+                clearable: false;
+                multi-line: true;
+                commit(draft) => { return Prefs.commit-text("prompt_text", draft); }
+            }
+        }
+    }
+}

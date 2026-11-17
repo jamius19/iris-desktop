@@ -1,0 +1,513 @@
+/*
+* Author: Jamius Siam
+* Since: 16/11/2026
+*/
+
+// Android `ui/components/{Rows,Surfaces,Switch,Slider}.kt`: nav and status rows, labelled groups, switches, sliders
+// and the accordion.
+
+import { Theme, Type, Metrics, Icons } from "../theme.slint";
+import { UiMath, GuideLine } from "../globals.slint";
+import { Label, Icon, Card, IconRow, FocusRing } from "basics.slint";
+import { SmallButton } from "buttons.slint";
+
+// A card that opens a page: icon, title, subtitle and an optional note (a warning in the failure colour, SemiBold).
+export component NavCard inherits Card {
+    in property <image> icon;
+    in property <length> icon-size: 22px;
+    in property <string> title;
+    in property <string> subtitle;
+    in property <string> note;
+    in property <bool> note-is-warning;
+    vertical-padding: 14px;
+    clickable: true;
+    button-label: self.title;
+
+    IconRow {
+        icon: root.icon;
+        icon-size: root.icon-size;
+        VerticalLayout {
+            spacing: 3px;
+            Label {
+                text: root.title;
+            }
+            Label {
+                text: root.subtitle;
+                style: Type.subtitle;
+                color: Theme.muted;
+            }
+            if root.note != "": Label {
+                text: root.note;
+                style: root.note-is-warning ? Type.helper-bold : Type.helper;
+                color: root.note-is-warning ? Theme.failure : Theme.muted;
+            }
+        }
+    }
+}
+
+// A Services row: title and status (blue when ok, else failure colour); while not ok, the helper and a Setup button.
+export component StatusRow inherits IconRow {
+    in property <string> title;
+    in property <bool> ok;
+    in property <string> ok-text: "Enabled";
+    in property <string> not-ok-text: "Disabled";
+    in property <string> helper;
+    callback setup();
+
+    VerticalLayout {
+        spacing: 11px;
+        VerticalLayout {
+            spacing: 3px;
+            Label {
+                text: root.title;
+            }
+            Label {
+                text: root.ok ? root.ok-text : root.not-ok-text;
+                style: Type.subtitle;
+                color: root.ok ? Theme.enabled : Theme.failure;
+            }
+        }
+        if !root.ok && root.helper != "": Label {
+            text: root.helper;
+            style: Type.helper;
+            color: Theme.muted;
+        }
+        if !root.ok: HorizontalLayout {
+            alignment: start;
+            SmallButton {
+                text: "Setup";
+                has-icon: true;
+                trailing-icon: Icons.arrow-right;
+                setup: true;
+                accessible-label: "Set up " + root.title;
+                clicked => { root.setup(); }
+            }
+        }
+    }
+}
+
+// A labelled control: label (+ subtitle 4 px below), the control, then the error (failure colour) above the helper,
+// 2 px apart. `guide`: extra helper lines with a SemiBold label (the Unload Model RAM guide), 4 px below the helper.
+export component FieldGroup inherits VerticalLayout {
+    in property <string> label;
+    in property <string> subtitle;
+    in property <string> helper;
+    in-out property <string> error;
+    in property <color> helper-color: Theme.muted;
+    in property <length> gap: 7px;
+    in property <[GuideLine]> guide;
+    spacing: self.gap;
+
+    if root.subtitle == "": Label {
+        text: root.label;
+    }
+    if root.subtitle != "": VerticalLayout {
+        spacing: 4px;
+        Label {
+            text: root.label;
+        }
+        Label {
+            text: root.subtitle;
+            style: Type.helper;
+            color: Theme.muted;
+        }
+    }
+    @children
+    if root.error != "" || root.helper != "" || root.guide.length > 0: VerticalLayout {
+        spacing: 2px;
+        // Explicit widths: inside the nested `if`s a wrapped text otherwise gets a one-line height.
+        if root.error != "": Label {
+            width: root.width;
+            text: root.error;
+            style: Type.helper;
+            color: Theme.failure;
+        }
+        if root.helper != "": Label {
+            width: root.width;
+            text: root.helper;
+            style: Type.helper;
+            color: root.helper-color;
+        }
+        if root.guide.length > 0: VerticalLayout {
+            padding-top: 2px;
+            for line in root.guide: HorizontalLayout {
+                alignment: start;
+                Label {
+                    text: line.label;
+                    style: Type.helper-bold;
+                    color: Theme.muted;
+                    wrap: no-wrap;
+                }
+                Label {
+                    text: line.advice;
+                    style: Type.helper;
+                    color: Theme.muted;
+                    wrap: no-wrap;
+                }
+            }
+        }
+    }
+}
+
+// The switch itself (the row is the toggle): 34 x 20 track, 16 px thumb, 150 ms.
+component Switch inherits Rectangle {
+    in property <bool> checked;
+    width: 31px;
+    height: 18px;
+    border-radius: 9px;
+    background: self.checked ? Theme.accent : Theme.track;
+    animate background { duration: 150ms; easing: cubic-bezier(0.4, 0, 0.2, 1); }
+    Rectangle {
+        x: root.checked ? 15px : 2px;
+        y: 2px;
+        width: 14px;
+        height: 14px;
+        border-radius: 7px;
+        background: root.checked ? Theme.switch-thumb-on : Theme.switch-thumb-off;
+        animate x, background { duration: 150ms; easing: cubic-bezier(0.4, 0, 0.2, 1); }
+    }
+}
+
+// A row that toggles a setting: title + subtitle, switch at the end; the whole row toggles (click, Space, Enter).
+// With an icon it gets the nav rows' icon column and subtitle style. A failed save shows under the subtitle.
+export component SwitchRow inherits Rectangle {
+    in property <string> title;
+    in property <string> subtitle;
+    in property <bool> checked;
+    in property <image> icon;
+    in property <bool> has-icon;
+    in-out property <string> error;
+    callback toggled(checked: bool);
+    property <bool> keyboard-focus;
+
+    accessible-role: switch;
+    accessible-label: self.title;
+    accessible-checked: self.checked;
+    accessible-checkable: true;
+    accessible-action-default => { self.toggle(); }
+
+    function toggle() {
+        root.toggled(!root.checked);
+    }
+
+    // Explicit text width: wrapped text inside a horizontal layout otherwise gets a one-line height.
+    HorizontalLayout {
+        if root.has-icon: VerticalLayout {
+            width: 32px;
+            padding-top: 2px;
+            padding-right: 10px;
+            alignment: start;
+            Icon {
+                source: root.icon;
+                width: 22px;
+                height: 22px;
+            }
+        }
+        VerticalLayout {
+            width: root.width - (root.has-icon ? 32px : 0px) - 42px;
+            spacing: root.has-icon ? 3px : 4px;
+            alignment: center;
+            Label {
+                text: root.title;
+            }
+            if root.subtitle != "": Label {
+                text: root.subtitle;
+                style: root.has-icon ? Type.subtitle : Type.helper;
+                color: Theme.muted;
+            }
+            if root.error != "": Label {
+                text: root.error;
+                style: Type.helper;
+                color: Theme.failure;
+            }
+        }
+        VerticalLayout {
+            padding-left: 11px;
+            alignment: center;
+            Switch {
+                checked: root.checked;
+            }
+        }
+    }
+    TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            focus.focus();
+            root.toggle();
+        }
+    }
+    focus := FocusScope {
+        focus-on-click: false;
+        focus-gained(reason) => { root.keyboard-focus = reason == FocusReason.tab-navigation; }
+        key-pressed(event) => {
+            if event.text == Key.Return || event.text == " " {
+                root.toggle();
+                return accept;
+            }
+            reject
+        }
+    }
+    if focus.has-focus && root.keyboard-focus: FocusRing {
+        width: root.width + 8px;
+        height: root.height + 8px;
+        radius: 5px;
+    }
+}
+
+// How a slider shows its value.
+export enum ValueFormat { plain, seconds, speed, percent, milliseconds }
+
+// Integer slider (3 px track, 7 x 24 pill thumb, 9 px wide while dragged or focused) with its value at the end. Drags
+// and clicks move it; arrow keys step it. `released` runs on release with a changed value. The wheel does nothing.
+component Slider inherits HorizontalLayout {
+    in property <int> value;
+    in property <int> minimum;
+    in property <int> maximum;
+    in property <int> step: 1;
+    in property <ValueFormat> format;
+    in property <string> label;
+    callback released(value: int);
+    property <int> position: self.value;
+    property <bool> keyboard-focus;
+    property <float> fraction: UiMath.slider-fraction(self.position, self.minimum, self.maximum);
+
+    changed value => {
+        self.position = self.value;
+    }
+
+    function text-for(v: int) -> string {
+        if root.format == ValueFormat.seconds {
+            return v + " s";
+        }
+        if root.format == ValueFormat.speed {
+            return (v / 100).to-fixed(1) + "x";
+        }
+        if root.format == ValueFormat.percent {
+            return v + "%";
+        }
+        if root.format == ValueFormat.milliseconds {
+            return v + " ms";
+        }
+        v
+    }
+
+    function commit() {
+        if root.position != root.value {
+            root.released(root.position);
+        }
+    }
+
+    spacing: 11px;
+    min-height: 22px;
+    track := Rectangle {
+        height: 22px;
+        horizontal-stretch: 1;
+        accessible-role: slider;
+        accessible-label: root.label;
+        accessible-value: root.text-for(root.position);
+        accessible-value-minimum: root.minimum;
+        accessible-value-maximum: root.maximum;
+        accessible-value-step: root.step;
+        accessible-action-increment => {
+            root.position = min(root.maximum, root.position + root.step);
+            root.commit();
+        }
+        accessible-action-decrement => {
+            root.position = max(root.minimum, root.position - root.step);
+            root.commit();
+        }
+
+        property <length> travel: 3px + (self.width - 6px) * root.fraction;
+        Rectangle {
+            y: (parent.height - 3px) / 2;
+            height: 3px;
+            border-radius: 1.5px;
+            background: Theme.track;
+        }
+        Rectangle {
+            x: 0;
+            y: (parent.height - 3px) / 2;
+            width: parent.travel;
+            height: 3px;
+            border-radius: 1.5px;
+            background: Theme.accent;
+        }
+        Rectangle {
+            property <length> w: touch.pressed || focus.has-focus ? 8px : 6px;
+            x: parent.travel - self.w / 2;
+            width: self.w;
+            height: 22px;
+            border-radius: self.w / 2;
+            background: Theme.accent;
+            animate w { duration: 150ms; }
+        }
+        touch := TouchArea {
+            mouse-cursor: pointer;
+            function move-to(x: length) {
+                root.position = UiMath.slider-value(
+                    (x - 3px) / (track.width - 6px),
+                    root.minimum,
+                    root.maximum,
+                    root.step
+                );
+            }
+            pointer-event(event) => {
+                if event.kind == PointerEventKind.down && event.button == PointerEventButton.left {
+                    focus.focus();
+                    self.move-to(self.mouse-x);
+                }
+                if event.kind == PointerEventKind.up && event.button == PointerEventButton.left {
+                    root.commit();
+                }
+            }
+            moved => {
+                if self.pressed {
+                    self.move-to(self.mouse-x);
+                }
+            }
+            scroll-event(event) => {
+                reject
+            }
+        }
+        focus := FocusScope {
+            focus-on-click: false;
+            focus-gained(reason) => { root.keyboard-focus = reason == FocusReason.tab-navigation; }
+            key-pressed(event) => {
+                if event.text == Key.LeftArrow {
+                    root.position = max(root.minimum, root.position - root.step);
+                    return accept;
+                }
+                if event.text == Key.RightArrow {
+                    root.position = min(root.maximum, root.position + root.step);
+                    return accept;
+                }
+                reject
+            }
+            key-released(event) => {
+                if event.text == Key.LeftArrow || event.text == Key.RightArrow {
+                    root.commit();
+                    return accept;
+                }
+                reject
+            }
+        }
+        if focus.has-focus && root.keyboard-focus: FocusRing {
+            width: track.width + 8px;
+            height: track.height + 8px;
+            radius: 4px;
+        }
+    }
+    Label {
+        text: root.text-for(root.position);
+        style: Type.slider-value;
+        horizontal-alignment: right;
+        min-width: 29px;
+        wrap: no-wrap;
+        accessible-role: none;
+    }
+}
+
+// A labelled slider; the page saves on release and puts the error back into `error`.
+export component SliderGroup inherits FieldGroup {
+    in property <int> value;
+    in property <int> minimum;
+    in property <int> maximum;
+    in property <int> step: 1;
+    in property <ValueFormat> format;
+    callback released(value: int);
+
+    Slider {
+        value: root.value;
+        minimum: root.minimum;
+        maximum: root.maximum;
+        step: root.step;
+        format: root.format;
+        label: root.label;
+        released(v) => { root.released(v); }
+    }
+}
+
+// A collapsible group (Provider Options, licence texts): title + status, chevron turning 180°, content below.
+export component Accordion inherits VerticalLayout {
+    in property <string> title;
+    in property <string> status;
+    in-out property <bool> expanded;
+    property <bool> keyboard-focus;
+
+    header := Rectangle {
+        accessible-role: button;
+        accessible-label: root.title;
+        accessible-expandable: true;
+        accessible-expanded: root.expanded;
+        accessible-action-default => { root.expanded = !root.expanded; }
+        HorizontalLayout {
+            spacing: 7px;
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 4px;
+                Label {
+                    text: root.title;
+                }
+                if root.status != "": Label {
+                    text: root.status;
+                    style: Type.helper;
+                    color: Theme.muted;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                Icon {
+                    source: Icons.chevron-down;
+                    width: 14px;
+                    height: 14px;
+                    transform-rotation: root.expanded ? 180deg : 0deg;
+                    animate transform-rotation { duration: 200ms; }
+                }
+            }
+        }
+        hit := Rectangle {
+            x: -11px;
+            y: -9px;
+            width: parent.width + 22px;
+            height: parent.height + 18px;
+            border-radius: Metrics.control-radius;
+            background: touch.pressed ? Theme.press-overlay : touch.has-hover ? Theme.hover-overlay : transparent;
+            touch := TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    focus.focus();
+                    root.expanded = !root.expanded;
+                }
+            }
+            focus := FocusScope {
+                focus-on-click: false;
+                focus-gained(reason) => { root.keyboard-focus = reason == FocusReason.tab-navigation; }
+                key-pressed(event) => {
+                    if event.text == Key.Return || event.text == " " {
+                        root.expanded = !root.expanded;
+                        return accept;
+                    }
+                    reject
+                }
+            }
+            if focus.has-focus && root.keyboard-focus: FocusRing {
+                width: hit.width + 8px;
+                height: hit.height + 8px;
+                radius: Metrics.control-radius;
+            }
+        }
+    }
+    Rectangle {
+        height: root.expanded ? content.preferred-height : 0px;
+        visible: root.expanded;
+        clip: true;
+        animate height { duration: 200ms; }
+        content := VerticalLayout {
+            y: 0;
+            height: self.preferred-height;
+            alignment: start;
+            padding-top: 14px;
+            @children
+        }
+    }
+}

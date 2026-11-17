@@ -1,0 +1,189 @@
+/*
+* Author: Jamius Siam
+* Since: 16/11/2026
+*/
+
+// Android `ui/components/Buttons.kt`, plus hover overlays, focus rings and Enter/Space.
+
+import { Theme, Type, Metrics } from "../theme.slint";
+import { Label, Icon, FocusRing } from "basics.slint";
+
+// Shared press/hover/focus behaviour of the buttons below. `takes-focus`: a click moves focus here first, so a focused
+// text field commits, but on the next event-loop iteration (after `clicked`): an action that changes a field's stored
+// value must commit that field explicitly first.
+component ButtonBehaviour inherits Rectangle {
+    in property <bool> enabled: true;
+    in property <bool> takes-focus: true;
+    in property <color> press-overlay;
+    in property <color> hover-overlay;
+    in property <length> radius: Metrics.control-radius;
+    callback clicked();
+    property <bool> keyboard-focus;
+
+    Rectangle {
+        border-radius: root.radius;
+        background: !root.enabled ? transparent : touch.pressed ? root.press-overlay
+            : touch.has-hover ? root.hover-overlay : transparent;
+        animate background { duration: 100ms; }
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => {
+            if root.takes-focus {
+                focus.focus();
+            }
+            root.clicked();
+        }
+    }
+    focus := FocusScope {
+        enabled: root.enabled;
+        focus-on-click: false;
+        focus-gained(reason) => { root.keyboard-focus = reason == FocusReason.tab-navigation; }
+        key-pressed(event) => {
+            if event.text == Key.Return || event.text == " " {
+                root.clicked();
+                return accept;
+            }
+            reject
+        }
+    }
+    if focus.has-focus && root.keyboard-focus: FocusRing {
+        width: root.width + 8px;
+        height: root.height + 8px;
+        radius: root.radius;
+    }
+}
+
+// The design's small dark button ("Setup →"): hugs its text and optional 11 px trailing icon. `setup`: Home's Setup
+// buttons, white in dark mode. Disabled: 38 % alpha.
+export component SmallButton inherits Rectangle {
+    in property <string> text;
+    in property <image> trailing-icon;
+    in property <bool> has-icon;
+    in property <bool> setup;
+    in property <bool> enabled: true;
+    callback clicked();
+    property <color> text-color: self.setup ? Theme.setup-button-text : Theme.button-text;
+
+    min-height: 29px;
+    horizontal-stretch: 0;
+    border-radius: Metrics.control-radius;
+    background: self.setup ? Theme.setup-button : Theme.button;
+    border-width: self.setup ? 0 : 1px;
+    border-color: Theme.control-border;
+    drop-shadow-color: Theme.button-shadow;
+    drop-shadow-offset-y: 2px;
+    drop-shadow-blur: 1px;
+    opacity: self.enabled ? 1 : Metrics.disabled-alpha;
+    accessible-role: button;
+    accessible-label: self.text;
+    accessible-enabled: self.enabled;
+    accessible-action-default => { self.clicked(); }
+
+    HorizontalLayout {
+        padding-left: 11px;
+        padding-right: 11px;
+        padding-top: 7px;
+        padding-bottom: 7px;
+        spacing: 3px;
+        Label {
+            text: root.text;
+            style: Type.button;
+            color: root.text-color;
+            wrap: no-wrap;
+        }
+        if root.has-icon: VerticalLayout {
+            alignment: center;
+            Icon {
+                source: root.trailing-icon;
+                tint: root.text-color;
+                width: 10px;
+                height: 10px;
+            }
+        }
+    }
+    ButtonBehaviour {
+        enabled: root.enabled;
+        press-overlay: root.setup ? Theme.press-overlay-on-setup-button : Theme.press-overlay-on-button;
+        hover-overlay: root.setup ? Theme.hover-overlay-on-setup-button : Theme.hover-overlay-on-button;
+        clicked => { root.clicked(); }
+    }
+}
+
+// A destructive action: SmallButton's shape, no fill, failure-coloured outline and text.
+export component DangerButton inherits Rectangle {
+    in property <string> text;
+    callback clicked();
+
+    min-height: 29px;
+    horizontal-stretch: 0;
+    border-radius: Metrics.control-radius;
+    border-width: 1px;
+    border-color: Theme.failure;
+    accessible-role: button;
+    accessible-label: self.text;
+    accessible-action-default => { self.clicked(); }
+
+    HorizontalLayout {
+        padding-left: 11px;
+        padding-right: 11px;
+        padding-top: 7px;
+        padding-bottom: 7px;
+        Label {
+            text: root.text;
+            style: Type.button;
+            color: Theme.failure;
+            wrap: no-wrap;
+        }
+    }
+    ButtonBehaviour {
+        press-overlay: Theme.press-overlay;
+        hover-overlay: Theme.hover-overlay;
+        clicked => { root.clicked(); }
+    }
+}
+
+// An icon button: a 32 x 40 box (28 inside fields), radius 8, icon centred. `bordered`: the 1 px field border it gets
+// next to a dropdown. `label` is the accessible name and the hover tooltip.
+export component IconAction inherits Rectangle {
+    in property <image> icon;
+    in property <color> tint: Theme.text;
+    in property <length> icon-size: 14px;
+    in property <angle> icon-rotation;
+    in property <string> label;
+    in property <bool> enabled: true;
+    in property <bool> bordered;
+    in property <bool> on-control;
+    in property <bool> takes-focus: true;
+    callback clicked();
+
+    width: 29px;
+    height: Metrics.control-height;
+    border-radius: Metrics.control-radius;
+    border-width: self.bordered ? 1px : 0;
+    border-color: Theme.field-border;
+    opacity: self.enabled ? 1 : Metrics.disabled-alpha;
+    accessible-role: button;
+    accessible-label: self.label;
+    accessible-enabled: self.enabled;
+    accessible-action-default => { self.clicked(); }
+
+    Icon {
+        source: root.icon;
+        tint: root.tint;
+        width: root.icon-size;
+        height: root.icon-size;
+        transform-rotation: root.icon-rotation;
+    }
+    ButtonBehaviour {
+        enabled: root.enabled;
+        takes-focus: root.takes-focus;
+        press-overlay: root.on-control ? Theme.press-overlay-on-control : Theme.press-overlay;
+        hover-overlay: root.on-control ? Theme.hover-overlay-on-control : Theme.hover-overlay;
+        clicked => { root.clicked(); }
+    }
+    if root.label != "": Tooltip {
+        text: @markdown("\{root.label}");
+    }
+}

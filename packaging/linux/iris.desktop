@@ -1,0 +1,8 @@
+# Author: Jamius Siam
+# Since: 16/11/2026
+[Desktop Entry]
+Type=Application
+Name=Iris
+Exec=iris
+Icon=iris
+Categories=Utility;

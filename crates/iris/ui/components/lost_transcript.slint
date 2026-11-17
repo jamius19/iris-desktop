@@ -1,0 +1,53 @@
+/*
+* Author: Jamius Siam
+* Since: 16/11/2026
+*/
+
+// Home: the last dictation that could be neither pasted nor copied (kept in memory only), selectable, with Copy and
+// Dismiss. Desktop addition.
+
+import { Theme, Type, Icons } from "../theme.slint";
+import { Services } from "../globals.slint";
+import { Card, Label } from "basics.slint";
+import { SmallButton, IconAction } from "buttons.slint";
+
+export component LostTranscriptCard inherits Card {
+    HorizontalLayout {
+        spacing: 7px;
+        Label {
+            text: "Last dictation wasn't inserted";
+            style: Type.title;
+            accessible-role: text;
+        }
+        IconAction {
+            icon: Icons.x;
+            label: "Dismiss";
+            clicked => { Services.dismiss-lost-transcript(); }
+        }
+    }
+    TextInput {
+        text: Services.lost-transcript;
+        read-only: true;
+        single-line: false;
+        wrap: word-wrap;
+        font-family: Type.field.family;
+        font-weight: Type.field.weight;
+        font-size: Type.field.size;
+        color: Theme.text;
+        selection-background-color: Theme.selection;
+        selection-foreground-color: Theme.text;
+    }
+    if Services.lost-transcript-error != "": Label {
+        text: Services.lost-transcript-error;
+        style: Type.helper;
+        color: Theme.failure;
+        accessible-role: text;
+    }
+    HorizontalLayout {
+        alignment: start;
+        SmallButton {
+            text: "Copy";
+            clicked => { Services.copy-lost-transcript(); }
+        }
+    }
+}

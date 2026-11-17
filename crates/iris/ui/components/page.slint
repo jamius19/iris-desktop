@@ -1,0 +1,195 @@
+/*
+* Author: Jamius Siam
+* Since: 16/11/2026
+*/
+
+// Android `ui/components/PageScaffold.kt`: background, the logo (Home) or back chevron + title, the content (items
+// 15 px apart, scrolling, in a centred column) and the version footer with the update status, pinned to the bottom
+// while the content is short. Clicking empty space clears focus, which commits a focused text field.
+
+import { Theme, Type, Icons } from "../theme.slint";
+import { App, Nav, UpdateState } from "../globals.slint";
+import { Label } from "basics.slint";
+import { IconAction } from "buttons.slint";
+
+// The update status after the version: " · Checking for update", " · Up to date" (click: check again),
+// " · Update available" (a link to the release page), nothing when unknown.
+component UpdateText inherits HorizontalLayout {
+    in property <UpdateState> state;
+
+    if root.state == UpdateState.checking: Label {
+        text: " · Checking for update";
+        style: Type.footer;
+        color: Theme.muted;
+        wrap: no-wrap;
+    }
+    if root.state == UpdateState.up-to-date: Rectangle {
+        preferred-width: up-to-date.preferred-width;
+        preferred-height: up-to-date.preferred-height;
+        accessible-role: button;
+        accessible-label: "Check for update";
+        accessible-action-default => { App.recheck-update(); }
+        up-to-date := Label {
+            text: " · Up to date";
+            style: Type.footer;
+            color: Theme.muted;
+            wrap: no-wrap;
+            accessible-role: none;
+        }
+        TouchArea {
+            mouse-cursor: pointer;
+            clicked => {
+                Nav.focus-root();
+                App.recheck-update();
+            }
+        }
+    }
+    if root.state == UpdateState.available: Label {
+        text: " · ";
+        style: Type.footer;
+        color: Theme.muted;
+        wrap: no-wrap;
+    }
+    if root.state == UpdateState.available: Rectangle {
+        preferred-width: available.preferred-width;
+        preferred-height: available.preferred-height;
+        accessible-role: button;
+        accessible-label: "Update available";
+        accessible-action-default => { App.open-release-page(); }
+        available := StyledText {
+            text: @markdown("<u>Update available</u>");
+            default-color: Theme.failure;
+            default-font-family: Type.footer.family;
+            // StyledText has no weight: Regular, not the footer's Medium.
+            default-font-size: Type.footer.size;
+            accessible-role: none;
+        }
+        TouchArea {
+            mouse-cursor: pointer;
+            clicked => { App.open-release-page(); }
+        }
+    }
+}
+
+// A new status slides up over the old one and fades in (200 ms) while the width follows, so the centred footer
+// glides to its new place instead of jumping.
+component UpdateStatus inherits Rectangle {
+    property <UpdateState> current: App.update;
+    property <UpdateState> last;
+    property <UpdateState> previous;
+    property <int> changes;
+    property <float> phase: self.changes;
+    animate phase { duration: 200ms; easing: cubic-bezier(0.4, 0, 0.2, 1); }
+    property <float> t: clamp(self.phase - self.changes + 1, 0, 1);
+
+    init => {
+        self.last = self.current;
+        self.previous = self.current;
+    }
+    changed current => {
+        self.previous = self.last;
+        self.last = self.current;
+        self.changes += 1;
+    }
+
+    clip: true;
+    preferred-width: old.preferred-width + (new.preferred-width - old.preferred-width) * self.t;
+    preferred-height: max(old.preferred-height, new.preferred-height);
+
+    old := UpdateText {
+        x: 0;
+        y: -root.height * root.t;
+        width: self.preferred-width;
+        height: self.preferred-height;
+        state: root.previous;
+        opacity: 1 - root.t;
+        visible: root.t < 1;
+    }
+    new := UpdateText {
+        x: 0;
+        y: root.height * (1 - root.t);
+        width: self.preferred-width;
+        height: self.preferred-height;
+        state: root.current;
+        opacity: root.t;
+    }
+}
+
+export component PageScaffold inherits Rectangle {
+    // Empty: Home (logo, no back).
+    in property <string> title;
+    callback back();
+
+    background: Theme.background;
+
+    flick := Flickable {
+        mouse-drag-pan-enabled: false;
+        content-height: max(self.height, layout.preferred-height);
+        TouchArea {
+            height: flick.content-height;
+            clicked => { Nav.focus-root(); }
+        }
+        // A column at most 594 px wide, centred.
+        layout := VerticalLayout {
+            width: min(flick.width, 594px);
+            x: (flick.width - self.width) / 2;
+            min-height: flick.height;
+            padding-left: 16px;
+            padding-right: 16px;
+            // Twice Android's top padding: desktop room under the title bar. Less above a title row, which is taller
+            // than Home's logo.
+            padding-top: root.title == "" ? 32px : 24px;
+            padding-bottom: 25px;
+            // Content keeps its size; the spacer below takes the extra height (footer pinned to the bottom).
+            VerticalLayout {
+                spacing: 14px;
+                vertical-stretch: 0;
+                alignment: start;
+                if root.title == "": HorizontalLayout {
+                    alignment: start;
+                    padding-left: 6px;
+                    padding-bottom: 6px;
+                    Image {
+                        source: Theme.logo;
+                        height: 17px;
+                        width: 17px * 865.39 / 153.13;
+                        accessible-role: image;
+                        accessible-label: "Iris";
+                    }
+                }
+                if root.title != "": HorizontalLayout {
+                    min-height: 36px;
+                    spacing: 2px;
+                    alignment: start;
+                    IconAction {
+                        icon: Icons.chevron-left;
+                        icon-size: 22px;
+                        y: 1px;
+                        label: "Back";
+                        clicked => { root.back(); }
+                    }
+                    Label {
+                        text: root.title;
+                        style: Type.page-title;
+                        accessible-role: text;
+                    }
+                }
+                @children
+            }
+            Rectangle {
+                min-height: 25px;
+                vertical-stretch: 1;
+            }
+            HorizontalLayout {
+                alignment: center;
+                Label {
+                    text: "Version " + App.version;
+                    style: Type.footer;
+                    color: Theme.muted;
+                    wrap: no-wrap;
+                }
+                UpdateStatus { }
+            }
+        }
+    }
+}

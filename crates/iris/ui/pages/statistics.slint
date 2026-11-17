@@ -1,0 +1,151 @@
+/*
+* Author: Jamius Siam
+* Since: 16/11/2026
+*/
+
+// Android `ui/settings/StatisticsPage.kt`: the all-time summary card; per on-device model its speed against real
+// time (with a verdict), the median transcription time and the last load time; per cloud provider + model the median
+// transcription time and the audio sent; per cleanup provider + model its p75 / p90 time. Reset clears them all.
+
+import { Theme, Type } from "../theme.slint";
+import { Stats, StatRow, Tone } from "../globals.slint";
+import { Label, Card, Section, Separator } from "../components/basics.slint";
+import { DangerButton } from "../components/buttons.slint";
+import { PageScaffold } from "../components/page.slint";
+
+// One figure of the summary card, white on the brand blue.
+component SummaryFigure inherits VerticalLayout {
+    in property <string> value;
+    in property <string> label;
+    horizontal-stretch: 1;
+    spacing: 3px;
+    accessible-role: text;
+    accessible-label: self.value + " " + self.label;
+    Label {
+        text: root.value;
+        style: Type.page-title;
+        color: #FFFFFF;
+        wrap: no-wrap;
+        accessible-role: none;
+    }
+    Label {
+        text: root.label;
+        style: Type.subtitle;
+        color: #FFFFFF;
+        wrap: no-wrap;
+        accessible-role: none;
+    }
+}
+
+// A title with its value on the right, a subtitle 3 px below.
+component StatLine inherits VerticalLayout {
+    in property <StatRow> stat;
+    spacing: 3px;
+    accessible-role: text;
+    accessible-label: self.stat.title + ": " + self.stat.value;
+    HorizontalLayout {
+        spacing: 7px;
+        Label {
+            text: root.stat.title;
+            horizontal-stretch: 1;
+            wrap: no-wrap;
+            overflow: elide;
+            accessible-role: none;
+        }
+        Label {
+            text: root.stat.value;
+            wrap: no-wrap;
+            color: root.stat.tone == Tone.enabled ? Theme.enabled : root.stat.tone == Tone.warning ? Theme.warning
+                : root.stat.tone == Tone.failure ? Theme.failure : Theme.text;
+            accessible-role: none;
+        }
+    }
+    Label {
+        text: root.stat.subtitle;
+        style: Type.subtitle;
+        color: Theme.muted;
+        accessible-role: none;
+    }
+}
+
+export component StatisticsPage inherits PageScaffold {
+    title: "Statistics";
+
+    if Stats.empty: Card {
+        VerticalLayout {
+            spacing: 3px;
+            Label {
+                text: "No statistics yet";
+            }
+            Label {
+                text: "Dictate to see transcription and post-processing times, audio sent and how on-device models "
+                    + "run on this computer.";
+                style: Type.subtitle;
+                color: Theme.muted;
+            }
+        }
+    }
+    if Stats.has-totals: Card {
+        fill: Theme.stats-card;
+        HorizontalLayout {
+            SummaryFigure {
+                value: Stats.time-transcribed;
+                label: "Time Transcribed";
+            }
+            // Net per dictation, so the sum may be negative: shown as "0 s".
+            SummaryFigure {
+                value: Stats.time-saved;
+                label: "Time Saved";
+            }
+        }
+    }
+    if Stats.has-totals: Label {
+        text: "Time saved compared to typing on a keyboard.";
+        style: Type.helper;
+        color: Theme.muted;
+    }
+    for section in Stats.sections: Section {
+        title: section.title;
+        for row[index] in section.rows: VerticalLayout {
+            spacing: 14px;
+            if index > 0: Separator { }
+            StatLine {
+                stat: row;
+            }
+        }
+        Label {
+            text: section.basis;
+            style: Type.helper;
+            color: Theme.muted;
+        }
+    }
+    // Spaced from the last section like a section, so they don't read as part of its card.
+    if Stats.has-models || Stats.has-cloud || Stats.has-cleanup: VerticalLayout {
+        padding-top: 13px;
+        spacing: 14px;
+        if Stats.has-models: Label {
+            text: "Processing speed compares how long you spoke with how long the model took to transcribe it. At "
+                + "1.5× or more it keeps up. Below 1× the transcription falls behind.";
+            style: Type.helper;
+            color: Theme.muted;
+        }
+        if Stats.has-cloud: Label {
+            text: "Audio Sent is roughly what the service bills, after skipping silences and applying audio speed. "
+                + "Soniox real-time bills the whole stream, so nothing is saved there.";
+            style: Type.helper;
+            color: Theme.muted;
+        }
+        if Stats.has-cleanup: Label {
+            text: "Only post processing requests that finished count. Failed and timed-out ones are left out.";
+            style: Type.helper;
+            color: Theme.muted;
+        }
+    }
+    if !Stats.empty: HorizontalLayout {
+        alignment: start;
+        DangerButton {
+            text: "Reset Statistics";
+            clicked => { Stats.reset(); }
+        }
+    }
+}

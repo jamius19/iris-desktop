@@ -1,0 +1,159 @@
+# Author: Jamius Siam
+# Since: 16/11/2026
+
+[package]
+name = "iris"
+description = "Voice dictation for Windows and Linux"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+iris-core.workspace = true
+iris-overlay.workspace = true
+arboard.workspace = true
+auto-launch.workspace = true
+chrono.workspace = true
+clap.workspace = true
+directories.workspace = true
+enigo.workspace = true
+handy-keys.workspace = true
+handy-recorder.workspace = true
+hound.workspace = true
+interprocess.workspace = true
+libc.workspace = true
+log.workspace = true
+open.workspace = true
+psl.workspace = true
+reqwest.workspace = true
+rodio.workspace = true
+rfd.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+simplelog.workspace = true
+slint.workspace = true
+tokio = { workspace = true, features = ["sync", "time", "macros"] }
+transcribe-cpp = { workspace = true, features = ["serde"] }
+url.workspace = true
+uuid.workspace = true
+
+# Vulkan GPU backend plus loadable per-ISA CPU modules (Handy's x64 and Linux setup).
+[target.'cfg(any(all(windows, target_arch = "x86_64"), target_os = "linux"))'.dependencies]
+transcribe-cpp = { workspace = true, features = ["serde", "dynamic-backends", "vulkan"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+signal-hook.workspace = true
+zbus.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Media_Audio",
+    "Win32_Media_Audio_Endpoints",
+    "Win32_Security",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Console",
+    "Win32_System_RemoteDesktop",
+    "Win32_System_Threading",
+    "Win32_System_Variant",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+windows-registry.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[build-dependencies]
+slint-build.workspace = true
+
+# The exe's icon resource (Start menu, taskbar, Explorer).
+[target.'cfg(windows)'.build-dependencies]
+winresource.workspace = true
+
+# Packaging (scripts/package.{ps1,sh} build first, then run the tools). Paths are relative to this directory.
+# `transcribe-libs/` is build.rs's staging dir for the transcribe-cpp libs (and on Windows the VC++ runtime DLLs).
+
+# cargo-packager: Windows NSIS (`cargo packager --release -p iris --formats nsis`) and Linux AppImage
+# (`--formats appimage`).
+[package.metadata.packager]
+product-name = "Iris"
+identifier = "dev.jamius.iris"
+publisher = "Jamius Siam"
+binaries = [{ path = "iris", main = true }]
+# The AppImage's hicolor icons; NSIS uses `nsis.installer-icon`.
+icons = [
+    "../../assets/icons/app/iris-16.png",
+    "../../assets/icons/app/iris-24.png",
+    "../../assets/icons/app/iris-32.png",
+    "../../assets/icons/app/iris-48.png",
+    "../../assets/icons/app/iris-64.png",
+    "../../assets/icons/app/iris-128.png",
+    "../../assets/icons/app/iris-256.png",
+    "../../assets/icons/app/iris-512.png",
+]
+# NSIS installs these next to iris.exe. Matches nothing on Linux (the AppImage takes its libs from `appimage.files`).
+resources = ["transcribe-libs/*.dll"]
+
+[package.metadata.packager.nsis]
+installer-mode = "currentUser"
+installer-icon = "../../assets/icons/app/iris.ico"
+# Not a section: the template pastes this at the top level, the only way into the uninstaller without a custom
+# template. A real uninstall removes the "Iris" login item that `auto-launch` writes; an upgrade runs the old
+# uninstaller with /P and keeps it.
+preinstall-section = '''
+Function un.onUninstSuccess
+  ClearErrors
+  ${GetOptions} $CMDLINE "/P" $R0
+  ${If} ${Errors}
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Iris"
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run" "Iris"
+  ${EndIf}
+FunctionEnd
+'''
+
+[package.metadata.packager.appimage]
+# From the host, as Handy's AppImage does: a bundled loader or Wayland client can break newer GPU stacks.
+excluded-libraries = ["libvulkan.so*", "libwayland-client.so*"]
+
+# usr/lib, not usr/lib/iris: linuxdeploy resets the executable's RUNPATH to $ORIGIN/../lib and copies libtranscribe
+# there, away from the ggml modules it loads from its own directory. The overlay helper goes next to `iris`; this
+# path assumes the default target dir (scripts/package.sh checks).
+[package.metadata.packager.appimage.files]
+"transcribe-libs" = "usr/lib"
+"../../target/release/iris-overlay" = "usr/bin/iris-overlay"
+
+# The AppImage is made from cargo-packager's deb layout, so its desktop entry comes from here (a plain file is a
+# valid template).
+[package.metadata.packager.deb]
+desktop-template = "../../packaging/linux/iris.desktop"
+
+# cargo-deb: `cargo deb -p iris --no-build` after `cargo build --release -p iris -p iris-overlay-helper`.
+# `target/release/` is cargo-deb's placeholder for the real target dir.
+[package.metadata.deb]
+maintainer = "Jamius Siam"
+copyright = "2026, Jamius Siam"
+depends = "libvulkan1, libasound2t64 | libasound2, libxkbcommon0, libfontconfig1"
+recommends = "wl-clipboard, ydotool, xdotool"
+maintainer-scripts = "../../packaging/linux/"
+assets = [
+    # The binary itself, not a symlink: its build rpath ($ORIGIN/../lib/iris) finds /usr/lib/iris, and the overlay
+    # helper must sit next to it.
+    ["target/release/iris", "usr/bin/", "755"],
+    ["target/release/iris-overlay", "usr/bin/", "755"],
+    ["transcribe-libs/*.so*", "usr/lib/iris/", "644"],
+    ["../../packaging/linux/iris.desktop", "usr/share/applications/", "644"],
+    ["../../packaging/linux/70-iris-input.rules", "usr/lib/udev/rules.d/", "644"],
+    ["../../assets/icons/app/iris-16.png", "usr/share/icons/hicolor/16x16/apps/iris.png", "644"],
+    ["../../assets/icons/app/iris-24.png", "usr/share/icons/hicolor/24x24/apps/iris.png", "644"],
+    ["../../assets/icons/app/iris-32.png", "usr/share/icons/hicolor/32x32/apps/iris.png", "644"],
+    ["../../assets/icons/app/iris-48.png", "usr/share/icons/hicolor/48x48/apps/iris.png", "644"],
+    ["../../assets/icons/app/iris-64.png", "usr/share/icons/hicolor/64x64/apps/iris.png", "644"],
+    ["../../assets/icons/app/iris-128.png", "usr/share/icons/hicolor/128x128/apps/iris.png", "644"],
+    ["../../assets/icons/app/iris-256.png", "usr/share/icons/hicolor/256x256/apps/iris.png", "644"],
+    ["../../assets/icons/app/iris-512.png", "usr/share/icons/hicolor/512x512/apps/iris.png", "644"],
+]

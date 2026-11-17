@@ -1,0 +1,128 @@
+/*
+* Author: Jamius Siam
+* Since: 16/11/2026
+*/
+
+// Design tokens from Android `ui/theme/IrisColors.kt` and `IrisType.kt`. Light = Figma, dark = Android's derived set.
+// Desktop-only tokens: hover overlays and the focus ring. Desktop sizes are Android's dp x 0.9 (whole px, fonts to
+// 0.5 px) here and in every component and page; comments quote Android's values.
+
+import "../../../assets/fonts/inter.ttf";
+import "../../../assets/fonts/blinker_semibold.ttf";
+// Only the colour scheme global; no std-widgets styling is used.
+import { Palette } from "std-widgets.slint";
+
+export global Theme {
+    // `unknown` (no portal answer) counts as light.
+    out property <bool> dark: Palette.color-scheme == ColorScheme.dark;
+
+    out property <color> background: dark ? #141616 : #E2E7E7;
+    out property <color> card: dark ? #212424 : #FFFFFF;
+    out property <color> text: dark ? #E8EAEA : #2F3031;
+    out property <color> muted: dark ? #9B9EA0 : #6F7173;
+    out property <color> failure: dark ? #FF5C93 : #EC1664;
+    out property <color> enabled: dark ? #5C9DFF : #0061F3;
+    out property <color> warning: dark ? #F59E0B : #B45309;
+    // The Statistics summary card, both modes (white text).
+    out property <color> stats-card: #0061F3;
+    out property <color> control: dark ? #0B0C0C : #E8EAEE;
+    out property <color> control-border: dark ? #3A3D3E : transparent;
+    out property <color> on-control: dark ? #FFFFFF : #2F3031;
+    out property <color> on-control-muted: dark ? #8E9193 : #6F7173;
+    out property <color> button: dark ? #0B0C0C : #2F3031;
+    out property <color> button-text: #FDFDFD;
+    out property <color> setup-button: dark ? #FFFFFF : #2F3031;
+    out property <color> setup-button-text: dark ? #2F3031 : #FDFDFD;
+    out property <color> field-border: dark ? #3D4142 : #D7D7D7;
+    out property <color> field-border-focused: dark ? #E8EAEA : #2F3031;
+    out property <color> services-divider: dark ? #343738 : #D6D8DD;
+    out property <color> separator: dark ? #303334 : #D8DBDF;
+    out property <color> track: dark ? #4A4E50 : #C6C8CC;
+    out property <color> accent: dark ? #E8EAEA : #2F3031;
+    out property <color> switch-thumb-on: dark ? #141616 : #FFFFFF;
+    out property <color> switch-thumb-off: dark ? #C9CCCD : #FFFFFF;
+    // Shadows: colour here, offset/blur at the use site (card y 3 blur 3.1, button y 2 blur 0.95, panel y 4 blur 12).
+    out property <color> card-shadow: dark ? #00000059 : #00000012;
+    out property <color> button-shadow: dark ? #00000059 : #00000014;
+    out property <color> panel-shadow: dark ? #00000080 : #00000029;
+    out property <color> press-overlay: dark ? #FFFFFF0F : #0000000F;
+    out property <color> press-overlay-on-control: dark ? #FFFFFF1A : #0000000F;
+    out property <color> press-overlay-on-button: #FFFFFF1A;
+    out property <color> press-overlay-on-setup-button: dark ? #0000000F : #FFFFFF1A;
+    // Desktop additions.
+    out property <color> hover-overlay: dark ? #FFFFFF0D : #0000000A;
+    out property <color> hover-overlay-on-control: dark ? #FFFFFF0F : #0000000A;
+    out property <color> hover-overlay-on-button: dark ? #FFFFFF0F : #FFFFFF0F;
+    out property <color> hover-overlay-on-setup-button: dark ? #0000000A : #FFFFFF0F;
+    out property <color> focus-ring: accent;
+    out property <color> selection: dark ? #E8EAEA40 : #2F303140;
+
+    out property <image> logo: dark ? @image-url("../../../assets/icons/brand/iris_logo_dark.svg")
+        : @image-url("../../../assets/icons/brand/iris_logo_light.svg");
+}
+
+export struct TextStyle {
+    family: string,
+    weight: int,
+    size: length,
+}
+
+export global Type {
+    out property <TextStyle> page-title: { family: "Blinker", weight: 600, size: 20px };
+    out property <TextStyle> section-heading: { family: "Blinker", weight: 600, size: 14.5px };
+    out property <TextStyle> title: { family: "Inter", weight: 600, size: 13.5px };
+    out property <TextStyle> subtitle: { family: "Inter", weight: 500, size: 11.5px };
+    out property <TextStyle> button: { family: "Inter", weight: 500, size: 12.5px };
+    out property <TextStyle> field: { family: "Inter", weight: 400, size: 12.5px };
+    // The system monospace font, as Android; Rust sets the family per platform (Slint has no generic family name).
+    in-out property <TextStyle> mono: { family: "monospace", weight: 400, size: 11.5px };
+    out property <TextStyle> helper: { family: "Inter", weight: 500, size: 11px };
+    out property <TextStyle> helper-bold: { family: "Inter", weight: 600, size: 11px };
+    out property <TextStyle> slider-value: { family: "Inter", weight: 800, size: 11.5px };
+    out property <TextStyle> menu-item: { family: "Inter", weight: 400, size: 12.5px };
+    out property <TextStyle> menu-item-selected: { family: "Inter", weight: 500, size: 12.5px };
+    out property <TextStyle> footer: { family: "Inter", weight: 500, size: 11.5px };
+}
+
+export global Metrics {
+    out property <length> card-radius: 14px;
+    out property <length> control-radius: 7px;
+    out property <length> control-height: 36px;
+    out property <float> disabled-alpha: 0.38;
+}
+
+export global Icons {
+    out property <image> arrow-down: @image-url("../../../assets/icons/lucide/arrow-down.svg");
+    out property <image> arrow-right: @image-url("../../../assets/icons/lucide/arrow-right.svg");
+    out property <image> audio-lines: @image-url("../../../assets/icons/lucide/audio-lines.svg");
+    out property <image> check: @image-url("../../../assets/icons/lucide/check.svg");
+    out property <image> chevron-down: @image-url("../../../assets/icons/lucide/chevron-down.svg");
+    out property <image> chevron-left: @image-url("../../../assets/icons/lucide/chevron-left.svg");
+    out property <image> clipboard-paste: @image-url("../../../assets/icons/lucide/clipboard-paste.svg");
+    out property <image> cloud: @image-url("../../../assets/icons/lucide/cloud.svg");
+    out property <image> database-backup: @image-url("../../../assets/icons/lucide/database-backup.svg");
+    out property <image> ear: @image-url("../../../assets/icons/lucide/ear.svg");
+    out property <image> eraser: @image-url("../../../assets/icons/lucide/eraser.svg");
+    out property <image> eye: @image-url("../../../assets/icons/lucide/eye.svg");
+    out property <image> eye-off: @image-url("../../../assets/icons/lucide/eye-off.svg");
+    out property <image> gauge: @image-url("../../../assets/icons/lucide/gauge.svg");
+    out property <image> info: @image-url("../../../assets/icons/lucide/info.svg");
+    out property <image> keyboard: @image-url("../../../assets/icons/lucide/keyboard.svg");
+    out property <image> mic: @image-url("../../../assets/icons/lucide/mic.svg");
+    out property <image> monitor: @image-url("../../../assets/icons/lucide/monitor.svg");
+    out property <image> plus: @image-url("../../../assets/icons/lucide/plus.svg");
+    out property <image> radio: @image-url("../../../assets/icons/lucide/radio.svg");
+    out property <image> refresh-cw: @image-url("../../../assets/icons/lucide/refresh-cw.svg");
+    out property <image> save-check: @image-url("../../../assets/icons/lucide/save-check.svg");
+    out property <image> sparkles: @image-url("../../../assets/icons/lucide/sparkles.svg");
+    out property <image> spell-check: @image-url("../../../assets/icons/lucide/spell-check.svg");
+    out property <image> trash: @image-url("../../../assets/icons/lucide/trash.svg");
+    out property <image> x: @image-url("../../../assets/icons/lucide/x.svg");
+    out property <image> openai: @image-url("../../../assets/icons/brand/openai.svg");
+    out property <image> vercel: @image-url("../../../assets/icons/brand/vercel.svg");
+    out property <image> deepgram: @image-url("../../../assets/icons/brand/deepgram.svg");
+    out property <image> soniox: @image-url("../../../assets/icons/brand/soniox.svg");
+    out property <image> nvidia: @image-url("../../../assets/icons/brand/nvidia.svg");
+    out property <image> openrouter: Theme.dark ? @image-url("../../../assets/icons/brand/openrouter-dark.svg")
+        : @image-url("../../../assets/icons/brand/openrouter-light.svg");
+}

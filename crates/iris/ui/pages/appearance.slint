@@ -1,0 +1,48 @@
+/*
+* Author: Jamius Siam
+* Since: 16/11/2026
+*/
+
+// Android `ui/settings/AppearancePage.kt` plus the desktop overlay position; Width replaces Android's Max Width.
+
+import { Prefs } from "../globals.slint";
+import { Section, Separator } from "../components/basics.slint";
+import { SliderGroup, ValueFormat } from "../components/rows.slint";
+import { SelectField } from "../components/dropdowns.slint";
+import { PageScaffold } from "../components/page.slint";
+
+export component AppearancePage inherits PageScaffold {
+    title: "Appearance";
+
+    Section {
+        title: "Overlay";
+        SelectField {
+            label: "Position";
+            options: [{ id: "top", label: "Top" }, { id: "bottom", label: "Bottom" }];
+            selected: Prefs.overlay-position;
+            picked(id) => { self.error = Prefs.set-string("overlay_position", id); }
+        }
+    }
+    Section {
+        title: "Text Panel";
+        SliderGroup {
+            label: "Lines";
+            subtitle: "Lines of live text the panel shows.";
+            value: Prefs.panel-lines;
+            minimum: 1;
+            maximum: 6;
+            helper: "Notices show at least 4 lines.";
+            released(v) => { self.error = Prefs.set-int("panel_lines", v); }
+        }
+        Separator { }
+        SliderGroup {
+            label: "Width";
+            subtitle: "Share of the screen width the panel uses once text appears.";
+            value: Prefs.overlay-width-percent;
+            minimum: 10;
+            maximum: 30;
+            format: ValueFormat.percent;
+            released(v) => { self.error = Prefs.set-int("overlay_width_percent", v); }
+        }
+    }
+}

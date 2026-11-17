@@ -1,0 +1,86 @@
+/*
+* Author: Jamius Siam
+* Since: 16/11/2026
+*/
+
+// The tray icon: idle / recording / working, menu Settings / Cancel (only while listening) / Quit; a left click opens
+// the window. Rust picks the size (Windows: by DPI) and whether the panel is dark.
+
+export enum TrayStatus { idle, recording, working }
+
+export component IrisTray inherits SystemTrayIcon {
+    in property <TrayStatus> status;
+    // The taskbar/panel is dark: white glyphs.
+    in property <bool> dark;
+    // Into the arrays below: 16, 20, 24, 32, 40, 48 px.
+    in property <int> size-index: 3;
+    callback open-settings();
+    callback cancel();
+    callback quit();
+
+    property <[image]> idle-light: [
+        @image-url("../../../assets/icons/tray/idle_light-16.png"),
+        @image-url("../../../assets/icons/tray/idle_light-20.png"),
+        @image-url("../../../assets/icons/tray/idle_light-24.png"),
+        @image-url("../../../assets/icons/tray/idle_light-32.png"),
+        @image-url("../../../assets/icons/tray/idle_light-40.png"),
+        @image-url("../../../assets/icons/tray/idle_light-48.png"),
+    ];
+    property <[image]> idle-dark: [
+        @image-url("../../../assets/icons/tray/idle_dark-16.png"),
+        @image-url("../../../assets/icons/tray/idle_dark-20.png"),
+        @image-url("../../../assets/icons/tray/idle_dark-24.png"),
+        @image-url("../../../assets/icons/tray/idle_dark-32.png"),
+        @image-url("../../../assets/icons/tray/idle_dark-40.png"),
+        @image-url("../../../assets/icons/tray/idle_dark-48.png"),
+    ];
+    property <[image]> recording: [
+        @image-url("../../../assets/icons/tray/recording-16.png"),
+        @image-url("../../../assets/icons/tray/recording-20.png"),
+        @image-url("../../../assets/icons/tray/recording-24.png"),
+        @image-url("../../../assets/icons/tray/recording-32.png"),
+        @image-url("../../../assets/icons/tray/recording-40.png"),
+        @image-url("../../../assets/icons/tray/recording-48.png"),
+    ];
+    property <[image]> working-light: [
+        @image-url("../../../assets/icons/tray/working_light-16.png"),
+        @image-url("../../../assets/icons/tray/working_light-20.png"),
+        @image-url("../../../assets/icons/tray/working_light-24.png"),
+        @image-url("../../../assets/icons/tray/working_light-32.png"),
+        @image-url("../../../assets/icons/tray/working_light-40.png"),
+        @image-url("../../../assets/icons/tray/working_light-48.png"),
+    ];
+    property <[image]> working-dark: [
+        @image-url("../../../assets/icons/tray/working_dark-16.png"),
+        @image-url("../../../assets/icons/tray/working_dark-20.png"),
+        @image-url("../../../assets/icons/tray/working_dark-24.png"),
+        @image-url("../../../assets/icons/tray/working_dark-32.png"),
+        @image-url("../../../assets/icons/tray/working_dark-40.png"),
+        @image-url("../../../assets/icons/tray/working_dark-48.png"),
+    ];
+
+    icon: root.status == TrayStatus.recording ? root.recording[root.size-index]
+        : root.status == TrayStatus.working
+        ? (root.dark ? root.working-dark : root.working-light)[root.size-index]
+        : (root.dark ? root.idle-dark : root.idle-light)[root.size-index];
+    tooltip: "Iris";
+    title: "Iris";
+    clicked => { root.open-settings(); }
+
+    Menu {
+        MenuItem {
+            title: "Settings";
+            activated => { root.open-settings(); }
+        }
+        MenuItem {
+            title: "Cancel";
+            enabled: root.status == TrayStatus.recording;
+            activated => { root.cancel(); }
+        }
+        MenuSeparator { }
+        MenuItem {
+            title: "Quit";
+            activated => { root.quit(); }
+        }
+    }
+}
