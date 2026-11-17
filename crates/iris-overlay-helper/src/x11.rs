@@ -82,15 +82,28 @@ pub fn run() {
     };
     HELPER.set(Some(Rc::new(helper)));
 
-    read_stdin(|message| {
-        let _ = slint::invoke_from_event_loop(move || match message {
-            Some(message) => with_helper(|helper| helper.handle(message)),
-            None => {
-                let _ = slint::quit_event_loop();
-            }
+    // The X window is created (unmapped) once the event loop runs. Take the app's messages only after it has a
+    // transparent background, so no show can map it without one.
+    let started = slint::spawn_local(async {
+        let helper = HELPER.with_borrow(Clone::clone);
+        if let Some(helper) = helper
+            && helper.window.window().winit_window().await.is_ok()
+        {
+            helper.clear_background();
+        }
+        read_stdin(|message| {
+            let _ = slint::invoke_from_event_loop(move || match message {
+                Some(message) => with_helper(|helper| helper.handle(message)),
+                None => {
+                    let _ = slint::quit_event_loop();
+                }
+            });
         });
+        send(FromHelper::Ready { mode: Mode::X11 });
     });
-    send(FromHelper::Ready { mode: Mode::X11 });
+    if let Err(e) = started {
+        return fail(format!("couldn't start the overlay: {e}"));
+    }
     if let Err(e) = slint::run_event_loop_until_quit() {
         fail(format!("the event loop failed: {e}"));
     }
@@ -199,6 +212,19 @@ impl Helper {
         let (connection, root) = self.x11.as_ref()?;
         let reply = xproto::query_pointer(connection, *root).ok()?.reply().ok()?;
         Some((reply.root_x as i32, reply.root_y as i32))
+    }
+
+    /// winit creates the X window without a background, so its first map shows the window's uninitialised area until
+    /// Slint's first frame lands (Slint's draw before the map is discarded on X11): a large card flashes once. A
+    /// transparent background pixel (the window has an ARGB visual) fills it on map instead.
+    fn clear_background(&self) {
+        let Some((connection, _)) = self.x11.as_ref() else { return };
+        let Some(xid) = self.window.window().with_winit_window(xid).flatten() else { return };
+        let background = xproto::ChangeWindowAttributesAux::new().background_pixel(0);
+        let set = xproto::change_window_attributes(connection, xid, &background);
+        if let Err(e) = set.map_err(|e| e.to_string()).and_then(|cookie| cookie.check().map_err(|e| e.to_string())) {
+            eprintln!("iris-overlay: couldn't clear the window background: {e}");
+        }
     }
 
     /// Limits the window's input to the card.
