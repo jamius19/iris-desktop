@@ -136,8 +136,9 @@ export component PageScaffold inherits Rectangle {
             min-height: flick.height;
             padding-left: 16px;
             padding-right: 16px;
-            // Twice Android's top padding: desktop room under the title bar.
-            padding-top: 32px;
+            // Twice Android's top padding: desktop room under the title bar. Less above a title row, which is taller
+            // than Home's logo.
+            padding-top: root.title == "" ? 32px : 24px;
             padding-bottom: 25px;
             // Content keeps its size; the spacer below takes the extra height (footer pinned to the bottom).
             VerticalLayout {
