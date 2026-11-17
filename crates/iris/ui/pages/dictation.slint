@@ -126,6 +126,32 @@ export component DictationPage inherits PageScaffold {
             format: ValueFormat.percent;
             released(v) => { self.error = Prefs.set-int("feedback_volume_percent", v); }
         }
+        Separator { }
+        SwitchRow {
+            title: "Mute Other Audio";
+            subtitle: "Mutes other audio while you dictate.";
+            checked: Prefs.mute-while-recording;
+            toggled(on) => { self.error = Prefs.set-bool("mute_while_recording", on); }
+        }
+        Separator { }
+        SwitchRow {
+            title: "Lower Other Audio";
+            subtitle: "Lowers other audio while you dictate.";
+            checked: Prefs.duck-while-recording;
+            toggled(on) => { self.error = Prefs.set-bool("duck_while_recording", on); }
+        }
+        Separator { }
+        SliderGroup {
+            opacity: Prefs.duck-while-recording ? 1 : Metrics.disabled-alpha;
+            label: "Lower By";
+            subtitle: "How much to lower it. 100% is silent.";
+            value: Prefs.duck-amount;
+            minimum: 0;
+            maximum: 100;
+            step: 10;
+            format: ValueFormat.percent;
+            released(v) => { self.error = Prefs.set-int("duck_amount", v); }
+        }
     }
     Section {
         title: "Startup";

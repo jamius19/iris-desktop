@@ -32,7 +32,7 @@ const NO_YDOTOOL_SOCKET: &str = "/nonexistent/.ydotool_socket";
 /// Runs `cmd` with `input` on stdin, killing it at `timeout` (a hung tool or clipboard owner can't block the paste).
 /// stdout and stderr are captured only when `capture`, else null: wl-copy forks a daemon that inherits them, and
 /// waiting on its pipes would hang.
-fn run(mut cmd: Command, input: Option<&[u8]>, capture: bool, timeout: Duration) -> Result<Output, String> {
+pub(crate) fn run(mut cmd: Command, input: Option<&[u8]>, capture: bool, timeout: Duration) -> Result<Output, String> {
     let program = cmd.get_program().to_string_lossy().into_owned();
     let pipe = |on: bool| if on { Stdio::piped() } else { Stdio::null() };
     cmd.stdin(pipe(input.is_some())).stdout(pipe(capture)).stderr(pipe(capture));

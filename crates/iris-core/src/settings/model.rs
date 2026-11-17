@@ -163,6 +163,11 @@ pub struct Settings {
     pub paste_delay_after_ms: i32,
     pub feedback_sounds: bool,
     pub feedback_volume_percent: i32,
+    /// Desktop: mute the default output while listening (wins over [`Self::duck_while_recording`]).
+    pub mute_while_recording: bool,
+    /// Desktop: lower the default output by [`Self::duck_amount`] percent while listening.
+    pub duck_while_recording: bool,
+    pub duck_amount: i32,
     pub launch_at_startup: bool,
 }
 
@@ -322,6 +327,8 @@ pub const DEFAULT_PASTE_DELAY_MS: i32 = 60;
 pub const PASTE_DELAY_MS_RANGE: RangeInclusive<i32> = 0..=500;
 pub const DEFAULT_FEEDBACK_VOLUME_PERCENT: i32 = 100;
 pub const FEEDBACK_VOLUME_PERCENT_RANGE: RangeInclusive<i32> = 0..=100;
+pub const DEFAULT_DUCK_AMOUNT: i32 = 50;
+pub const DUCK_AMOUNT_RANGE: RangeInclusive<i32> = 0..=100;
 
 pub const DEFAULT_PROMPT_ID: &str = "default";
 pub const DEFAULT_PROMPT_NAME: &str = "Clean up dictation";
@@ -392,6 +399,9 @@ pub mod keys {
     pub const PASTE_DELAY_AFTER_MS: &str = "paste_delay_after_ms";
     pub const FEEDBACK_SOUNDS: &str = "feedback_sounds";
     pub const FEEDBACK_VOLUME_PERCENT: &str = "feedback_volume_percent";
+    pub const MUTE_WHILE_RECORDING: &str = "mute_while_recording";
+    pub const DUCK_WHILE_RECORDING: &str = "duck_while_recording";
+    pub const DUCK_AMOUNT: &str = "duck_amount";
     pub const LAUNCH_AT_STARTUP: &str = "launch_at_startup";
 }
 
@@ -535,6 +545,9 @@ pub fn to_settings(values: &Values, stored_secrets: &HashSet<String>) -> Result<
         paste_delay_after_ms: int(values, keys::PASTE_DELAY_AFTER_MS)?.unwrap_or(DEFAULT_PASTE_DELAY_MS),
         feedback_sounds: boolean(values, keys::FEEDBACK_SOUNDS)?.unwrap_or(false),
         feedback_volume_percent: int(values, keys::FEEDBACK_VOLUME_PERCENT)?.unwrap_or(DEFAULT_FEEDBACK_VOLUME_PERCENT),
+        mute_while_recording: boolean(values, keys::MUTE_WHILE_RECORDING)?.unwrap_or(false),
+        duck_while_recording: boolean(values, keys::DUCK_WHILE_RECORDING)?.unwrap_or(false),
+        duck_amount: int(values, keys::DUCK_AMOUNT)?.unwrap_or(DEFAULT_DUCK_AMOUNT),
         launch_at_startup: boolean(values, keys::LAUNCH_AT_STARTUP)?.unwrap_or(false),
     })
 }
@@ -776,6 +789,9 @@ mod tests {
         assert_eq!(60, settings.paste_delay_after_ms);
         assert!(!settings.feedback_sounds);
         assert_eq!(100, settings.feedback_volume_percent);
+        assert!(!settings.mute_while_recording);
+        assert!(!settings.duck_while_recording);
+        assert_eq!(50, settings.duck_amount);
         assert!(!settings.launch_at_startup);
     }
 

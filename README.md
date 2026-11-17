@@ -7,8 +7,9 @@ using. It is the desktop version of the Iris Android app, with the same settings
   Parakeet TDT v3, Whisper Small) or in the cloud (OpenAI, Vercel AI Gateway, Deepgram, Soniox) with your own API key.
 - **Post processing**: filler-word removal, Custom Words, and optional LLM cleanup (Vercel AI Gateway, OpenRouter or
   any OpenAI-compatible server) with your own prompts.
-- A small overlay while you dictate (live text, cancel with ✕ or Esc), a tray icon, start/stop sounds, launch at
-  startup, statistics, and encrypted backups that move between Iris on Android and desktop.
+- A small overlay while you dictate (live text, cancel with ✕ or Esc), a tray icon, start/stop sounds, muting or
+  lowering other audio while you dictate, launch at startup, statistics, and encrypted backups that move between Iris
+  on Android and desktop.
 
 API keys are kept in the system keychain (Windows Credential Manager, the Secret Service on Linux), never in a file.
 
@@ -96,6 +97,8 @@ which can mangle non-English text; Ctrl+V (the default) is more reliable. On X11
   without a tray Iris keeps its window open instead of starting hidden.
 - API keys need a Secret Service (GNOME Keyring or KWallet). On a bare window manager, start `gnome-keyring-daemon`
   before Iris.
+- Mute Other Audio and Lower Other Audio need `wpctl` (PipeWire), `pactl` (PulseAudio) or `amixer` (ALSA); without
+  them other audio is left alone.
 
 ## Backup and restore
 Home → Backup and Restore saves all settings, prompts, custom providers and API keys to a password-protected

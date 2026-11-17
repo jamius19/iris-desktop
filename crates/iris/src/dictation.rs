@@ -5,14 +5,15 @@
 
 //! Wires dictation together (Android `AppContainer.kt`, Handy's `lib.rs` setup): inputs (global shortcut, other
 //! instances, SIGUSR2, the overlay's ✕) go to the hold-or-toggle coordinator, which starts and stops the dictation
-//! controller; the controller's state drives the overlay, the tray, the sounds, the cancel shortcut and the idle
-//! unload; a final transcript is cleaned up (if enabled) and pasted. The controller, the on-device provider, the
-//! engine's loads and the cleanup feed [`Statistics`]. Settings reach the worker threads through a `watch` updated on
-//! every change.
+//! controller; the controller's state drives the overlay, the tray, the sounds, muting or lowering other audio, the
+//! cancel shortcut and the idle unload; a final transcript is cleaned up (if enabled) and pasted. The controller, the
+//! on-device provider, the engine's loads and the cleanup feed [`Statistics`]. Settings reach the worker threads
+//! through a `watch` updated on every change.
 
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
+use iris_core::audio::ducking::Duck;
 use iris_core::cleanup::options::parse_provider_options;
 use iris_core::cleanup::{CleanupRequest, timed_cleanup, with_glossary};
 use iris_core::dictation::DictationState;
@@ -141,8 +142,8 @@ impl Dictation {
         cancel_listening(&self.controller, &self.coordinator);
     }
 
-    /// Reacts to every state change: the cancel shortcut and the start/stop sounds, the coordinator's busy window, the
-    /// idle unload, and the overlay and tray (on the main thread).
+    /// Reacts to every state change: the cancel shortcut, the start/stop sounds and other audio, the coordinator's busy
+    /// window, the idle unload, and the overlay and tray (on the main thread).
     async fn follow_state(self) {
         let mut states = self.controller.state();
         let mut cancel_registered = false;
@@ -155,10 +156,13 @@ impl Dictation {
                 let binding = listening.then(|| self.settings.borrow().shortcut_cancel.clone());
                 self.hotkeys.set_cancel(binding.as_deref());
                 cancel_registered = listening;
-                // Handy's timing: the start sound on entering Listening, the stop sound on leaving it.
                 let settings = self.settings.borrow();
-                if settings.feedback_sounds {
-                    self.sounds.play(listening, settings.feedback_volume_percent);
+                for step in feedback(listening, &settings) {
+                    match step {
+                        Feedback::Play(start) => self.sounds.play(start, settings.feedback_volume_percent),
+                        Feedback::Duck(duck) => self.sounds.duck(duck),
+                        Feedback::Restore => self.sounds.restore(),
+                    }
                 }
             }
             if matches!(state, DictationState::Done { .. } | DictationState::Error { .. }) {
@@ -179,6 +183,26 @@ impl Dictation {
                 break;
             }
         }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+enum Feedback {
+    /// The start sound (true) or the stop sound.
+    Play(bool),
+    Duck(Duck),
+    Restore,
+}
+
+/// On entering Listening (`listening`) or leaving it. Handy's timing: the start sound on entering, the stop sound on
+/// leaving. Other audio is muted or lowered after the start sound, so it's heard, and put back before the stop sound;
+/// always put back, so turning the setting off mid-dictation still restores.
+fn feedback(listening: bool, settings: &Settings) -> Vec<Feedback> {
+    let sound = settings.feedback_sounds.then_some(Feedback::Play(listening));
+    if listening {
+        sound.into_iter().chain(Duck::from_settings(settings).map(Feedback::Duck)).collect()
+    } else {
+        std::iter::once(Feedback::Restore).chain(sound).collect()
     }
 }
 
@@ -281,7 +305,30 @@ fn done_notice(cleanup_error: Option<String>, cleanup_timed_out: bool, paste_not
 
 #[cfg(test)]
 mod tests {
-    use super::done_notice;
+    use iris_core::audio::ducking::Duck;
+    use iris_core::settings::{Values, to_settings};
+
+    use super::{Feedback, done_notice, feedback};
+
+    #[test]
+    fn feedback_order() {
+        let mut settings = to_settings(&Values::new(), &Default::default()).unwrap();
+        assert_eq!(Vec::<Feedback>::new(), feedback(true, &settings));
+        assert_eq!(vec![Feedback::Restore], feedback(false, &settings));
+
+        settings.feedback_sounds = true;
+        assert_eq!(vec![Feedback::Play(true)], feedback(true, &settings));
+        assert_eq!(vec![Feedback::Restore, Feedback::Play(false)], feedback(false, &settings));
+
+        settings.duck_while_recording = true;
+        assert_eq!(vec![Feedback::Play(true), Feedback::Duck(Duck::Lower(50))], feedback(true, &settings));
+        assert_eq!(vec![Feedback::Restore, Feedback::Play(false)], feedback(false, &settings));
+
+        settings.feedback_sounds = false;
+        settings.mute_while_recording = true;
+        assert_eq!(vec![Feedback::Duck(Duck::Mute)], feedback(true, &settings));
+        assert_eq!(vec![Feedback::Restore], feedback(false, &settings));
+    }
 
     #[test]
     fn done_notices() {

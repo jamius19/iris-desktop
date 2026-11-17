@@ -31,7 +31,7 @@ without CMake/Vulkan. `iris-overlay` lets the Windows app and the Linux helper c
 | Paste | enigo, clipboard, external tools (`spawn_blocking`) | result back to the session |
 | Overlay helper **process** (Linux) | layer-shell or X11 overlay window | framed JSON over its stdin/stdout |
 | Idle-unload thread | unloads the model after the Unload Model delay | `EngineSupervisor::unload` |
-| Sounds thread | rodio playback of the start/stop tones | channel |
+| Sounds thread | rodio playback of the start/stop tones; muting or lowering other audio and restoring it, in order | channel |
 | Tray watcher thread (Linux) | `NameOwnerChanged` of `org.kde.StatusNotifierWatcher` | recreates the tray on the main thread |
 
 ## State flow
@@ -40,7 +40,8 @@ without CMake/Vulkan. `iris-overlay` lets the Windows app and the Linux helper c
    **DictationController** (Android's `Idle → Listening → Finalizing → Done | Error → Idle`, hold times 1.5 s / 3 s).
 2. A session: capture → VAD gate → Audio Speed → provider → filler words → custom words → cleanup → paste →
    statistics. State goes out on a `watch` channel; audio levels on a separate one.
-3. Subscribers (`crates/iris/src/dictation.rs`): overlay host, cancel shortcut, idle unload, tray icon, sounds.
+3. Subscribers (`crates/iris/src/dictation.rs`): overlay host, cancel shortcut, idle unload, tray icon, sounds and
+   other audio (mute or lower).
 4. Settings changes: Slint callback → `Store::set_*` (validated, atomic write) → `refresh` → `watch<Settings>` for the
    worker threads, hotkey re-registration, overlay config, autostart.
 
@@ -86,7 +87,8 @@ Android's keys are kept verbatim with the same defaults and validation (`crates/
 Android-only `bubble_side` / `bubble_y_fraction` are kept and unused. Desktop-only keys (Android keeps them as unknown
 keys): `overlay_position`, `overlay_width_percent`, `microphone_device`, `local_accelerator`, `shortcut_transcribe`,
 `shortcut_cancel`, `shortcut_activation`, `paste_method`, `append_trailing_space`, `restore_clipboard`,
-`paste_delay_ms`, `paste_delay_after_ms`, `feedback_sounds`, `feedback_volume_percent`, `launch_at_startup`.
+`paste_delay_ms`, `paste_delay_after_ms`, `feedback_sounds`, `feedback_volume_percent`, `mute_while_recording`,
+`duck_while_recording`, `duck_amount`, `launch_at_startup`.
 
 ### Backup file (`.irisbackup`, identical to Android's)
 `IRISBKUP` (8) · format version 1 (1) · PBKDF2 iterations, u32 big-endian (4) · salt (16) · nonce (12) — this 41-byte

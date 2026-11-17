@@ -22,6 +22,7 @@ mod services;
 mod signals;
 mod single_instance;
 mod sounds;
+mod system_audio;
 mod tray;
 mod ui;
 

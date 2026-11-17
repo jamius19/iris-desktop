@@ -380,6 +380,31 @@ impl Store {
         self.set(keys::FEEDBACK_VOLUME_PERCENT, Value::Int(percent))
     }
 
+    /// Mute and Lower are exclusive: turning one on turns the other off.
+    pub fn set_mute_while_recording(&mut self, enabled: bool) -> io::Result<()> {
+        self.edit(|values| {
+            put(values, keys::MUTE_WHILE_RECORDING, Value::Boolean(enabled));
+            if enabled {
+                put(values, keys::DUCK_WHILE_RECORDING, Value::Boolean(false));
+            }
+            Ok(())
+        })
+    }
+
+    pub fn set_duck_while_recording(&mut self, enabled: bool) -> io::Result<()> {
+        self.edit(|values| {
+            put(values, keys::DUCK_WHILE_RECORDING, Value::Boolean(enabled));
+            if enabled {
+                put(values, keys::MUTE_WHILE_RECORDING, Value::Boolean(false));
+            }
+            Ok(())
+        })
+    }
+
+    pub fn set_duck_amount(&mut self, percent: i32) -> io::Result<()> {
+        self.set(keys::DUCK_AMOUNT, Value::Int(percent))
+    }
+
     pub fn set_launch_at_startup(&mut self, enabled: bool) -> io::Result<()> {
         self.set(keys::LAUNCH_AT_STARTUP, Value::Boolean(enabled))
     }
@@ -646,6 +671,28 @@ mod tests {
         // Android's Max Width is left alone.
         assert_eq!(model::DEFAULT_PANEL_WIDTH_PERCENT, settings.panel_width_percent);
         assert!(settings.launch_at_startup);
+    }
+
+    #[test]
+    fn mute_and_lower_are_exclusive_and_persist() {
+        let (_dir, path) = temp();
+        let mut store = Store::open(path.clone());
+        store.set_duck_amount(30).unwrap();
+        store.set_duck_while_recording(true).unwrap();
+        store.set_mute_while_recording(true).unwrap();
+        let muted = settings(&Store::open(path.clone()));
+        assert!(muted.mute_while_recording);
+        assert!(!muted.duck_while_recording);
+        assert_eq!(30, muted.duck_amount);
+
+        store.set_duck_while_recording(true).unwrap();
+        let lowered = settings(&Store::open(path.clone()));
+        assert!(!lowered.mute_while_recording);
+        assert!(lowered.duck_while_recording);
+
+        // Turning one off leaves the other alone.
+        store.set_mute_while_recording(false).unwrap();
+        assert!(settings(&Store::open(path)).duck_while_recording);
     }
 
     #[test]

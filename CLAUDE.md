@@ -48,8 +48,9 @@ cargo test -p iris -- --ignored --test-threads=1`.
   `wav.rs`; `openai/`, `vercel/`, `deepgram/`, `soniox/`: one directory per cloud provider, `protocol.rs` + streaming
   + upload (+ Soniox catalogue/models); `local/`: model table, download store + transport, on-device provider with the
   engine injected, idle rule), `audio/` (speech gate, resample, Sonic time-stretch from
-  `vendor/sonic`, visualizer), `dictation/` (state, controller, Handy's coordinator, filler words, language, custom
-  words, `statistics.rs`: the Statistics file and its records; on-device parts in `stt/local/stats.rs`).
+  `vendor/sonic`, visualizer, `ducking.rs`: mute/lower other audio and the Linux tools' parsers), `dictation/`
+  (state, controller, Handy's coordinator, filler words, language, custom words, `statistics.rs`: the Statistics file
+  and its records; on-device parts in `stt/local/stats.rs`).
 - `crates/iris`: the binary. `ui/*.slint` (design system in `ui/theme.slint`, `ui/components/`, pages in `ui/pages/`,
   globals in `ui/globals.slint`), `src/ui/*.rs` (glue: fills `Prefs` from settings, dispatches setters by settings key;
   `shortcuts.rs` for the Shortcut section and Global Shortcut row; `catalogs.rs` the model menus; `statistics.rs`,
@@ -58,7 +59,8 @@ cargo test -p iris -- --ignored --test-threads=1`.
   select), `src/dictation.rs` (wires controller, coordinator, hotkeys, cleanup, paste, overlay), `src/local/` (Handy's
   `engine_supervisor` verbatim in `supervisor/`, `engine.rs`, Silero `vad.rs`), `src/capture.rs`, `src/hotkey.rs`,
   `src/paste/`, `src/overlay/` (host; Windows window / Linux helper client), `src/cli.rs`, `src/single_instance.rs`,
-  `src/signals.rs`, `src/headless.rs` (`-f`), `src/tray.rs` (+ `ui/tray.slint`), `src/autostart.rs`, `src/sounds.rs`.
+  `src/signals.rs`, `src/headless.rs` (`-f`), `src/tray.rs` (+ `ui/tray.slint`), `src/autostart.rs`, `src/sounds.rs`
+  (also runs the mute/lower of other audio), `src/system_audio.rs` (the default output: Windows COM, Linux tools).
 - `crates/iris-overlay`: `ui/overlay.slint`, `OverlayState`/`apply`, geometry, helper IPC frames.
   `crates/iris-overlay-helper`: Linux-only `iris-overlay` binary (layer-shell via SCTK + Slint software renderer, else
   an X11 override-redirect window).

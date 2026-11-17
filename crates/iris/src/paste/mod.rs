@@ -10,6 +10,8 @@
 
 #[cfg(target_os = "linux")]
 mod linux;
+#[cfg(target_os = "linux")]
+pub(crate) use linux::run;
 
 use std::sync::{Mutex, PoisonError};
 use std::thread::sleep;

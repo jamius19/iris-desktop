@@ -199,6 +199,8 @@ pub fn run(start_hidden: bool, no_tray: bool) -> Result<(), slint::PlatformError
     }
     with_state(update::check);
     let result = slint::run_event_loop_until_quit();
+    // Quit while listening: put other audio back before the process ends.
+    with_state(|s| s.dictation.sounds.restore_blocking());
     // Dropped while its threads still run. Left in the thread-local, Windows drops it during process exit, after the
     // other threads were ended, and the runtime's shutdown waits for them forever (`taskkill /F` fails).
     drop(STATE.with(|state| state.borrow_mut().take()));
@@ -263,6 +265,9 @@ pub fn refresh(state: &mut AppState) {
     prefs.set_paste_delay_after_ms(settings.paste_delay_after_ms);
     prefs.set_feedback_sounds(settings.feedback_sounds);
     prefs.set_feedback_volume_percent(settings.feedback_volume_percent);
+    prefs.set_mute_while_recording(settings.mute_while_recording);
+    prefs.set_duck_while_recording(settings.duck_while_recording);
+    prefs.set_duck_amount(settings.duck_amount);
     prefs.set_launch_at_startup(settings.launch_at_startup);
     prefs.set_wayland(services::wayland());
     let unreadable = |name| state.unreadable_secrets.contains(name);
@@ -379,6 +384,8 @@ fn set_bool(state: &mut AppState, key: &str, value: bool) -> SharedString {
         "append_trailing_space" => store.set_append_trailing_space(value),
         "restore_clipboard" => store.set_restore_clipboard(value),
         "feedback_sounds" => store.set_feedback_sounds(value),
+        "mute_while_recording" => store.set_mute_while_recording(value),
+        "duck_while_recording" => store.set_duck_while_recording(value),
         "launch_at_startup" => store.set_launch_at_startup(value),
         _ => match key.strip_prefix("custom_cleanup_send_json_schema:") {
             Some(id) => store.update_custom_cleanup_provider(id, |p| p.send_json_schema = value),
@@ -408,6 +415,7 @@ fn set_int(state: &mut AppState, key: &str, value: i32) -> SharedString {
         "paste_delay_ms" => store.set_paste_delay_ms(value),
         "paste_delay_after_ms" => store.set_paste_delay_after_ms(value),
         "feedback_volume_percent" => store.set_feedback_volume_percent(value),
+        "duck_amount" => store.set_duck_amount(value),
         _ => unreachable!("unknown int setting {key}"),
     };
     saved(state, result)

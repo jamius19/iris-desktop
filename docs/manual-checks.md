@@ -160,6 +160,14 @@ real backup checks), there was no real Linux desktop, and no packaging tool was 
 - [ ] Launch at Startup on → log out/in → Iris starts hidden in the tray; off removes the entry (Windows Run value,
       `~/.config/autostart/Iris.desktop`); the AppImage registers `$APPIMAGE`.
 - [ ] Start and stop sounds at the right moments; Volume; off is silent.
+- [ ] Mute Other Audio and Lower Other Audio (with music playing) on Windows, PipeWire (`wpctl`), PulseAudio (`pactl`)
+      and ALSA (`amixer`): other audio is muted / lowered by Lower By while listening and comes back after; turning
+      one on turns the other off; Lower By is dimmed unless Lower is on.
+- [ ] An output already muted before dictating stays muted afterwards.
+- [ ] With sounds on, the start and stop sounds stay audible (the start sound plays before muting, the stop sound
+      after restoring).
+- [ ] Cancel (✕, Esc), an error while listening, and Quit from the tray while listening all restore other audio.
+- [ ] Switching the default output device mid-dictation: the restore goes to the new device (known limitation).
 - [ ] Footer: "Checking for update" → "Up to date" (click re-checks); "Update available" (red, underlined, opens the
       releases page) with a build whose version is older than the latest release; offline shows nothing.
 - [ ] About → Rust libraries opens fast and scrolls (femtovg and software renderer).
