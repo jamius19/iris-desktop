@@ -23,7 +23,7 @@ export component HomePage inherits PageScaffold {
             icon-top-padding: 2px;
             title: "Microphone";
             ok: Services.microphone-found;
-            ok-text: "Found";
+            ok-text: Services.microphone-name;
             not-ok-text: "Not found";
             helper: "Connect a microphone, or check that Iris may use it.";
             setup => { Services.microphone-setup(); }

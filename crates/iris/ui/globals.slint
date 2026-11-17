@@ -267,6 +267,8 @@ export global Nav {
 
 export global Services {
     in property <bool> microphone-found;
+    // The selected microphone's name, or "System default".
+    in property <string> microphone-name;
     in property <bool> wayland;
     in property <bool> text-input-ready;
     in property <string> text-input-helper;

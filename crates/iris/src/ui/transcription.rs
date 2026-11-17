@@ -15,7 +15,7 @@ use slint::ComponentHandle;
 
 use super::{model, option};
 use crate::services::ServiceStatus;
-use crate::{GuideLine, Icons, MainWindow, Prefs, SelectOption};
+use crate::{GuideLine, Icons, MainWindow, Prefs, SelectOption, Services};
 
 pub fn fill(window: &MainWindow, settings: &Settings, services: &ServiceStatus, downloads: &StoreState) {
     let prefs = window.global::<Prefs>();
@@ -108,6 +108,10 @@ pub fn fill(window: &MainWindow, settings: &Settings, services: &ServiceStatus, 
         && !services.microphones.iter().any(|(id, _)| *id == settings.microphone_device)
     {
         microphones.push(option(&settings.microphone_device, &settings.microphone_device));
+    }
+    // Home's Microphone row names the selected one.
+    if let Some(selected) = microphones.iter().find(|m| m.id == settings.microphone_device) {
+        window.global::<Services>().set_microphone_name(selected.label.clone());
     }
     prefs.set_microphones(model(microphones));
     prefs.set_vad_enabled(settings.vad_enabled);
