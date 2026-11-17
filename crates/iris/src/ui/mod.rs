@@ -84,6 +84,8 @@ pub fn run(start_hidden: bool, no_tray: bool) -> Result<(), slint::PlatformError
         tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().expect("tokio runtime"),
     );
     let window = MainWindow::new()?;
+    // Before the first show: GNOME matches the window to iris.desktop by this id, else it docks a generic "iris".
+    slint::set_xdg_app_id("iris")?;
     let store = Store::open(Store::default_path());
     // Re-registers a login item whose app moved, removes a stale one.
     if let Err(e) = autostart::apply(store.settings(&HashSet::new()).launch_at_startup) {

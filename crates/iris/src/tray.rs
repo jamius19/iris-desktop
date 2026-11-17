@@ -11,8 +11,12 @@
 use iris_core::dictation::DictationState;
 use slint::ComponentHandle;
 
+use crate::MainWindow;
 use crate::dictation::Dictation;
-use crate::{IrisTray, MainWindow, TrayStatus};
+
+// Its own compilation unit: one shared with MainWindow gives the tray a window adapter too, which on Wayland is an
+// empty toplevel that GNOME's dock lists.
+slint::slint! { export { IrisTray, TrayStatus } from "../ui/tray.slint"; }
 
 #[cfg(target_os = "linux")]
 const WATCHER: &str = "org.kde.StatusNotifierWatcher";
