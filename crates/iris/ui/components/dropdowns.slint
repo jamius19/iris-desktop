@@ -393,6 +393,8 @@ export component ModelCombobox inherits FieldGroup {
             } else {
                 panel.show();
             }
+        } else {
+            panel.close();
         }
     }
 
@@ -484,6 +486,7 @@ export component ModelCombobox inherits FieldGroup {
                 icon: Icons.arrow-down;
                 tint: Theme.on-control;
                 width: 25px;
+                height: Metrics.control-height - 10px;
                 on-control: true;
                 takes-focus: false;
                 icon-rotation: panel.is-open ? 180deg : 0deg;
@@ -491,10 +494,15 @@ export component ModelCombobox inherits FieldGroup {
                 clicked => {
                     if panel.is-open {
                         panel.close();
-                    } else {
+                    } else if input.has-focus {
                         root.query = "";
                         root.arrowed = false;
                         root.open-list();
+                    } else {
+                        // Focusing the field opens the list (see `changed has-focus`), with no focus saved in the
+                        // popup: a click on the field while the list is open is swallowed by the popup, and the field
+                        // must still hold the focus when that click closes it.
+                        input.focus();
                     }
                 }
             }
@@ -505,6 +513,7 @@ export component ModelCombobox inherits FieldGroup {
                 icon: Icons.refresh-cw;
                 tint: Theme.on-control;
                 width: 25px;
+                height: Metrics.control-height - 10px;
                 on-control: true;
                 takes-focus: false;
                 enabled: !root.loading;

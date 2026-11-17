@@ -123,6 +123,7 @@ export component PageScaffold inherits Rectangle {
     background: Theme.background;
 
     flick := Flickable {
+        mouse-drag-pan-enabled: false;
         content-height: max(self.height, layout.preferred-height);
         TouchArea {
             height: flick.content-height;

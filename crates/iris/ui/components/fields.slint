@@ -185,10 +185,12 @@ export component AutosaveTextField inherits FieldGroup {
         }
         if root.clearable && (input.text != "" || root.stored != ""): VerticalLayout {
             alignment: root.multi-line ? start : center;
+            padding-top: root.multi-line ? 5px : 0;
             IconAction {
                 icon: Icons.trash;
                 tint: Theme.failure;
                 width: 25px;
+                height: Metrics.control-height - 10px;
                 takes-focus: false;
                 label: "Clear " + root.label;
                 clicked => {
@@ -252,6 +254,7 @@ component SecureKeyShell inherits FieldShell {
         IconAction {
             icon: root.visible-input ? Icons.eye-off : Icons.eye;
             width: 25px;
+            height: Metrics.control-height - 10px;
             takes-focus: false;
             label: root.visible-input ? "Hide " + root.field-label : "Show " + root.field-label;
             clicked => { root.visible-input = !root.visible-input; }
@@ -263,6 +266,7 @@ component SecureKeyShell inherits FieldShell {
             icon: Icons.trash;
             tint: Theme.failure;
             width: 25px;
+            height: Metrics.control-height - 10px;
             takes-focus: false;
             label: root.trash-label;
             clicked => { root.trash(); }
@@ -404,6 +408,7 @@ export component DraftTextField inherits FieldGroup {
                     icon: Icons.trash;
                     tint: Theme.failure;
                     width: 25px;
+                    height: Metrics.control-height - 10px;
                     takes-focus: false;
                     label: "Clear " + root.label;
                     clicked => {
