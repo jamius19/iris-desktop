@@ -61,7 +61,7 @@ pub fn wire(window: &MainWindow) {
         })
     });
     prefs.on_stop_recording_shortcut(|| {
-        log::debug!("Shortcut recording: the field asked to stop (Esc or focus lost)");
+        log::debug!("Shortcut recording: the field asked to stop (Backspace or focus lost)");
         with_state(|state| state.dictation.hotkeys.stop_recording())
     });
     prefs.on_reset_shortcut(|key| {

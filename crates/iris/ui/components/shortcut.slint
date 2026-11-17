@@ -4,7 +4,7 @@
 */
 
 // Desktop-only: a global shortcut as key caps in a field box. Click (or Enter/Space) → "Press keys…", then the keys
-// held so far, read by handy-keys (Rust); Esc or leaving the field cancels; the trash resets the default.
+// held so far, read by handy-keys (Rust); Backspace or leaving the field cancels; the trash resets the default.
 
 import { Theme, Type, Metrics, Icons } from "../theme.slint";
 import { Nav } from "../globals.slint";
@@ -50,7 +50,7 @@ export component ShortcutField inherits FieldGroup {
                 background: Theme.hover-overlay;
             }
             HorizontalLayout {
-                padding-left: 7px;
+                padding-left: root.recording && root.pressed.length == 0 ? 11px : 7px;
                 padding-right: 7px;
                 spacing: 4px;
                 alignment: start;
@@ -83,14 +83,23 @@ export component ShortcutField inherits FieldGroup {
                     }
                 }
             }
-            // Keeps keyboard focus while recording, so Esc cancels here instead of going back a page.
+            // Keeps keyboard focus while recording, so Backspace cancels here and Esc never goes back a page.
             // Not focused by the press itself: that would take the press from the TouchArea below.
             scope := FocusScope {
                 focus-on-click: false;
                 key-pressed(event) => {
                     if root.recording {
-                        if event.text == Key.Escape {
+                        if event.text == Key.Backspace {
                             root.stop-recording();
+                            Nav.focus-root();
+                        }
+                        return accept;
+                    }
+                    // Not recording: Esc only drops the focus, as the listener may end a recording on Esc's
+                    // release before the window's Esc press gets here; repeats of a held Esc are swallowed
+                    // without dropping the focus.
+                    if event.text == Key.Escape {
+                        if !event.repeat {
                             Nav.focus-root();
                         }
                         return accept;

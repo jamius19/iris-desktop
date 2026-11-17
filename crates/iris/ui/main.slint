@@ -104,7 +104,7 @@ export component MainWindow inherits Window {
 
     scope := FocusScope {
         key-pressed(event) => {
-            if event.text == Key.Escape || (event.modifiers.alt && event.text == Key.LeftArrow) {
+            if (event.text == Key.Escape && !event.repeat) || (event.modifiers.alt && event.text == Key.LeftArrow) {
                 root.go-back();
                 return accept;
             }

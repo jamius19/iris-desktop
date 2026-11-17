@@ -46,8 +46,9 @@ microphone, paste or screen checks), and there was no real Linux desktop (only W
       German.
 - [ ] Hold or Toggle: hold > 300 ms then release stops; a quick tap keeps recording until the next tap. Toggle and
       Push to Talk modes. Escape cancels only while listening and is free otherwise (type Esc in another app).
-- [ ] Shortcut field: click → "Press keys…", a new combination saves and works at once; Esc cancels without leaving
-      the page; the trash resets; the Global Shortcut row shows Registered / Not registered with the helper.
+- [ ] Shortcut field: click → "Press keys…", a new combination saves and works at once; Esc alone records "Esc"
+      without leaving the page; Backspace cancels and keeps the old shortcut; the trash resets; the Global Shortcut
+      row shows Registered / Not registered with the helper.
 - [ ] Overlay never takes focus (type in an editor while it shows; click ✕ — the editor keeps the caret); top and
       bottom positions; on the monitor with the cursor (Windows, X11); at 100 % / 150 % / 200 % scaling; two monitors
       with different scales.

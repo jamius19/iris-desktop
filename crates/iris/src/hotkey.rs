@@ -91,8 +91,8 @@ impl Hotkeys {
     }
 
     /// Shortcut capture for the settings UI: calls `on_keys` with the keys held so far whenever they change (handy-keys
-    /// syntax), then `on_done` once with Ok(Some(binding)), Ok(None) (Esc / stopped) or Err(status) when the keyboard
-    /// can't be read. The transcribe shortcut is suspended meanwhile.
+    /// syntax), then `on_done` once with Ok(Some(binding)), Ok(None) (Backspace / stopped) or Err(status) when the
+    /// keyboard can't be read. The transcribe shortcut is suspended meanwhile.
     pub fn record(
         &self,
         on_keys: impl Fn(String) + Send + 'static,
@@ -371,7 +371,8 @@ fn status(error: &Error) -> ShortcutStatus {
 }
 
 /// Builds the recorded binding from key events, as Handy's `useShortcutCapture`: a combination with a key is taken when
-/// a key is released (never bare modifiers then), a modifier-only one when every modifier is released. Esc cancels.
+/// a key is released (never bare modifiers then), a modifier-only one when every modifier is released. Backspace
+/// cancels (Handy: Esc), so Esc can be recorded.
 #[derive(Default)]
 struct Capture {
     keyed: Option<String>,
@@ -381,9 +382,10 @@ struct Capture {
 }
 
 impl Capture {
-    /// `Some(result)` when the capture ends: `Some(binding)`, or `None` for Esc.
+    /// `Some(result)` when the capture ends: `Some(binding)`, or `None` for Backspace.
     fn on_key(&mut self, event: &KeyEvent) -> Option<Option<String>> {
-        if event.is_key_down && event.key == Some(Key::Escape) {
+        // handy-keys names Backspace `Delete` (macOS naming; the Delete key is `ForwardDelete`).
+        if event.is_key_down && event.key == Some(Key::Delete) {
             return Some(None);
         }
         let hotkey = event.as_hotkey().ok().map(|hotkey| hotkey.to_handy_string());
@@ -540,11 +542,21 @@ mod tests {
     }
 
     #[test]
-    fn escape_cancels_recording() {
+    fn backspace_cancels_recording() {
         let mut capture = Capture::default();
         capture.on_key(&key(Modifiers::CTRL_LEFT, None, true));
 
-        assert_eq!(capture.on_key(&key(Modifiers::empty(), Some(Key::Escape), true)), Some(None));
+        assert_eq!(capture.on_key(&key(Modifiers::empty(), Some(Key::Delete), true)), Some(None));
+    }
+
+    #[test]
+    fn records_escape_on_key_release() {
+        let mut capture = Capture::default();
+        assert_eq!(capture.on_key(&key(Modifiers::empty(), Some(Key::Escape), true)), None);
+
+        let done = capture.on_key(&key(Modifiers::empty(), Some(Key::Escape), false));
+
+        assert_eq!(done, Some(Some("escape".into())));
     }
 
     #[test]

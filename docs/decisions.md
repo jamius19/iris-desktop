@@ -114,9 +114,10 @@ Throwaway code stayed in the session scratch directory; none of it is in the rep
   Download to resume.". A complete `.tmp` is verified without a request; a bad 206/416 restarts once from zero.
 - **Download client**: HTTP/1.1, 15 s connect timeout (Handy's), shared by the store.
 - **Shortcut field**: key caps from the handy-keys binding (`ctrl_left` → "Left Ctrl"); recording uses handy-keys'
-  listener (a combination is taken on key release, Handy's capture rules); Esc or losing focus cancels; the trash
-  resets the default. New error text for a binding handy-keys can't use on this platform: "This shortcut doesn't work
-  here. Pick another one." `InUse` can only mean Iris's own other binding (handy-keys can't see other apps').
+  listener (a combination is taken on key release, Handy's capture rules); Backspace or losing focus cancels
+  (Handy: Esc, which then can't be bound; Iris records Esc like any key); the trash resets the default. New error
+  text for a binding handy-keys can't use on this platform: "This shortcut doesn't work here. Pick another one."
+  `InUse` can only mean Iris's own other binding (handy-keys can't see other apps').
 - **Paste**: on a failed paste the transcript stays on the clipboard (no restore) and the notice "Couldn't paste. The
   text is on the clipboard." shows (Handy restores; Iris keeps the text). Only when the text couldn't be put on the
   clipboard either (wl-copy, then arboard on Wayland) does the notice say so and carry the text: "Couldn't paste or
