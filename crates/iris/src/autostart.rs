@@ -3,38 +3,43 @@
 * Since: 16/11/2026
 */
 
-//! Launch at Startup: an `auto-launch` login item named "Iris" that runs `<path> --start-hidden`.
+//! Launch at Startup: an `auto-launch` login item named "Iris" that runs `<path> --start-hidden`, or `<path> ` with
+//! Start Hidden on System Start off.
 //! Windows: HKCU `...\CurrentVersion\Run` value `Iris` (the NSIS uninstaller deletes it by that name); Linux:
 //! `~/.config/autostart/Iris.desktop`. The path is the running executable, or the AppImage it runs from (`$APPIMAGE`).
 
 use auto_launch::{AutoLaunch, AutoLaunchBuilder};
+use iris_core::settings::Settings;
 
 const NAME: &str = "Iris";
-const ARGS: &str = "--start-hidden";
+const HIDDEN: &str = "--start-hidden";
 
 /// The Launch at Startup switch's error.
 pub const ERROR: &str = "Couldn't update the startup entry.";
 
-/// Makes the login item match the setting: (re)registers it when on and missing or pointing elsewhere (the app
-/// moved), removes it when off and present. Leaves an entry the user disabled in Task Manager alone.
-pub fn apply(enabled: bool) -> auto_launch::Result<()> {
+/// Makes the login item match the settings: (re)registers it when on and missing or different (the app moved, Start
+/// Hidden on System Start changed), removes it when off and present. Leaves an entry the user disabled in Task
+/// Manager alone.
+pub fn apply(settings: &Settings) -> auto_launch::Result<()> {
     let path = app_path()?;
-    let command = format!("{path} {ARGS}");
+    let args: &[&str] = if settings.start_hidden { &[HIDDEN] } else { &[] };
+    // As auto-launch writes it: a space after the path even without arguments.
+    let command = format!("{path} {}", args.join(" "));
     let stored = stored_command();
-    if enabled && stored.as_deref() != Some(command.as_str()) {
+    if settings.launch_at_startup && stored.as_deref() != Some(command.as_str()) {
         log::info!("Registering the login item");
-        launcher(&path)?.enable()
-    } else if !enabled && stored.is_some() {
+        launcher(&path, args)?.enable()
+    } else if !settings.launch_at_startup && stored.is_some() {
         log::info!("Removing the login item");
-        launcher(&path)?.disable()
+        launcher(&path, args)?.disable()
     } else {
         Ok(())
     }
 }
 
-fn launcher(path: &str) -> auto_launch::Result<AutoLaunch> {
+fn launcher(path: &str, args: &[&str]) -> auto_launch::Result<AutoLaunch> {
     let mut builder = AutoLaunchBuilder::new();
-    builder.set_app_name(NAME).set_app_path(path).set_args(&[ARGS]);
+    builder.set_app_name(NAME).set_app_path(path).set_args(args);
     #[cfg(windows)]
     builder.set_windows_enable_mode(auto_launch::WindowsEnableMode::CurrentUser);
     builder.build()

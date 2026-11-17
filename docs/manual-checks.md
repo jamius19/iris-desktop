@@ -158,7 +158,8 @@ real backup checks), there was no real Linux desktop, and no packaging tool was 
       Quit; `--start-hidden`, `--no-tray`, both together; a second `iris` shows the window.
 - [ ] Linux login race: Iris started before the panel's StatusNotifierWatcher gets its tray once the panel appears.
 - [ ] Launch at Startup on → log out/in → Iris starts hidden in the tray; off removes the entry (Windows Run value,
-      `~/.config/autostart/Iris.desktop`); the AppImage registers `$APPIMAGE`.
+      `~/.config/autostart/Iris.desktop`); the AppImage registers `$APPIMAGE`. With Start Hidden on System Start
+      off, the entry has no `--start-hidden` and the login start shows the window.
 - [ ] Start and stop sounds at the right moments; Volume; off is silent.
 - [ ] Mute Other Audio and Lower Other Audio (with music playing) on Windows, PipeWire (`wpctl`), PulseAudio (`pactl`)
       and ALSA (`amixer`): other audio is muted / lowered by Lower By while listening and comes back after; turning
