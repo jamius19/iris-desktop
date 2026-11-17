@@ -86,8 +86,11 @@ export component OverlayWindow inherits Window {
     property <length> panel-height: root.panel-open ? root.pad-top + root.live-height : 0px;
     property <length> notice-max-height: max(root.notice-line,
         min(max(root.lines, 4) * root.notice-line, root.height - 28px - root.panel-height));
+    // The message's height wrapped at the card's final width: wrapped at the widening card's width, it would take an
+    // extra line until the card is wide enough.
+    property <length> notice-height: min(notice-wrap-probe.preferred-height, root.notice-max-height);
     // The control row; an error or warning grows it to fit the message.
-    property <length> row-h: root.notice ? max(root.row-height, notice-text.height + 24px) : root.row-height;
+    property <length> row-h: root.notice ? max(root.row-height, root.notice-height + 24px) : root.row-height;
     property <bool> wide-card: root.panel-open || (root.wide && root.mode == OverlayMode.listening);
     // Hidden and faded out: the card is the compact pill, so the next show starts there (not from the last shape).
     property <bool> parked;
@@ -137,6 +140,15 @@ export component OverlayWindow inherits Window {
         visible: false;
         overflow: elide;
         text: root.message;
+        font-size: 12.5px;
+        font-weight: 500;
+    }
+
+    notice-wrap-probe := Text {
+        visible: false;
+        width: max(0px, root.target-width - root.notice-x - root.pad-x);
+        text: root.message;
+        wrap: word-wrap;
         font-size: 12.5px;
         font-weight: 500;
     }
@@ -202,7 +214,8 @@ export component OverlayWindow inherits Window {
         notice-text := Text {
             x: root.notice-x;
             width: max(0px, card.width - root.notice-x - root.pad-x);
-            height: min(self.preferred-height, root.notice-max-height);
+            // Elided while the card widens to fit it.
+            height: root.notice-height;
             y: row.y + (row.height - self.height) / 2;
             text: root.notice ? root.message : "";
             wrap: word-wrap;
