@@ -274,7 +274,11 @@ Throwaway code stayed in the session scratch directory; none of it is in the rep
 - **Launch at Startup**: `auto-launch` with the name `Iris` and `--start-hidden`; the path is the executable or
   `$APPIMAGE`, quoted. Applied at start and on change; only rewritten when missing or different. Turning it off removes
   the Run value but leaves Windows' inert `StartupApproved\Run\Iris` (the NSIS uninstaller removes both). Error text
-  (new): "Couldn't update the startup entry.".
+  (new): "Couldn't update the startup entry.". On the Appearance page (Startup section) with **Start Hidden on System
+  Start** (`start_hidden`, default on, "Opens in the tray without showing the window."): the login item passes
+  `--start-hidden` only with the setting on, so changing it rewrites the entry (which also re-enables one disabled in
+  Task Manager). The setting affects the login start only: the flag typed by hand always hides, and a plain start
+  always shows the window.
 - **Sounds**: original tones, not Handy's `pop_*.wav`: Handy's files came from a contributor PR with no recorded
   provenance or licence, so `cargo xtask sounds` generates `assets/sounds/{start,stop}.wav` (120 ms sine sweep
   587↔880 Hz). rodio decodes WAV with `hound` (its `wav` feature pulls symphonia, MPL-2.0). Played on entering and

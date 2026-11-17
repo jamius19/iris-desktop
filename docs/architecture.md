@@ -80,7 +80,7 @@ like an error leaving; an error or warning replaces the control row's content un
 | VAD model | `<data>/vad/silero-vad-v6.2-F32.gguf`, written from the binary when missing | GGUF |
 | Favicons | `<cache>/favicons/<domain>.png` | PNG |
 | Logs | `<data>/logs/iris.log` (truncated per run) | text; never keys or transcripts |
-| Startup entry | Windows HKCU `...\CurrentVersion\Run` value `Iris`; Linux `~/.config/autostart/Iris.desktop` | `"<exe or $APPIMAGE>" --start-hidden` |
+| Startup entry | Windows HKCU `...\CurrentVersion\Run` value `Iris`; Linux `~/.config/autostart/Iris.desktop` | `"<exe or $APPIMAGE>" --start-hidden` (no flag with `start_hidden` off) |
 
 ### Settings keys
 Android's keys are kept verbatim with the same defaults and validation (`crates/iris-core/src/settings/model.rs`).
@@ -88,7 +88,7 @@ Android-only `bubble_side` / `bubble_y_fraction` are kept and unused. Desktop-on
 keys): `overlay_position`, `overlay_width_percent`, `microphone_device`, `local_accelerator`, `shortcut_transcribe`,
 `shortcut_cancel`, `shortcut_activation`, `paste_method`, `append_trailing_space`, `restore_clipboard`,
 `paste_delay_ms`, `paste_delay_after_ms`, `feedback_sounds`, `feedback_volume_percent`, `mute_while_recording`,
-`duck_while_recording`, `duck_amount`, `launch_at_startup`.
+`duck_while_recording`, `duck_amount`, `launch_at_startup`, `start_hidden`.
 
 ### Backup file (`.irisbackup`, identical to Android's)
 `IRISBKUP` (8) · format version 1 (1) · PBKDF2 iterations, u32 big-endian (4) · salt (16) · nonce (12) — this 41-byte

@@ -409,6 +409,10 @@ impl Store {
         self.set(keys::LAUNCH_AT_STARTUP, Value::Boolean(enabled))
     }
 
+    pub fn set_start_hidden(&mut self, enabled: bool) -> io::Result<()> {
+        self.set(keys::START_HIDDEN, Value::Boolean(enabled))
+    }
+
     fn set(&mut self, key: &str, value: Value) -> io::Result<()> {
         self.edit(|values| {
             put(values, key, value);
@@ -657,6 +661,7 @@ mod tests {
         store.set_paste_delay_ms(120).unwrap();
         store.set_overlay_width_percent(20).unwrap();
         store.set_launch_at_startup(true).unwrap();
+        store.set_start_hidden(false).unwrap();
 
         let settings = settings(&Store::open(path));
         assert_eq!("gpt-transcribe", settings.stt_model);
@@ -671,6 +676,7 @@ mod tests {
         // Android's Max Width is left alone.
         assert_eq!(model::DEFAULT_PANEL_WIDTH_PERCENT, settings.panel_width_percent);
         assert!(settings.launch_at_startup);
+        assert!(!settings.start_hidden);
     }
 
     #[test]

@@ -4,7 +4,7 @@
 */
 
 // Desktop-only page: the global shortcut (Handy's hold-or-toggle coordinator), text insertion (Handy's paste
-// settings), sounds and startup.
+// settings) and sounds.
 
 import { Metrics } from "../theme.slint";
 import { Prefs } from "../globals.slint";
@@ -151,15 +151,6 @@ export component DictationPage inherits PageScaffold {
             step: 10;
             format: ValueFormat.percent;
             released(v) => { self.error = Prefs.set-int("duck_amount", v); }
-        }
-    }
-    Section {
-        title: "Startup";
-        SwitchRow {
-            title: "Launch at Startup";
-            subtitle: "Starts hidden in the tray.";
-            checked: Prefs.launch-at-startup;
-            toggled(on) => { self.error = Prefs.set-bool("launch_at_startup", on); }
         }
     }
 }

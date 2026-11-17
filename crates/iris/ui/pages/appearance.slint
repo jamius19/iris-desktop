@@ -3,11 +3,13 @@
 * Since: 16/11/2026
 */
 
-// Android `ui/settings/AppearancePage.kt` plus the desktop overlay position; Width replaces Android's Max Width.
+// Android `ui/settings/AppearancePage.kt` plus the desktop overlay position and startup; Width replaces Android's Max
+// Width.
 
+import { Metrics } from "../theme.slint";
 import { Prefs } from "../globals.slint";
 import { Section, Separator } from "../components/basics.slint";
-import { SliderGroup, ValueFormat } from "../components/rows.slint";
+import { SwitchRow, SliderGroup, ValueFormat } from "../components/rows.slint";
 import { SelectField } from "../components/dropdowns.slint";
 import { PageScaffold } from "../components/page.slint";
 
@@ -43,6 +45,23 @@ export component AppearancePage inherits PageScaffold {
             maximum: 30;
             format: ValueFormat.percent;
             released(v) => { self.error = Prefs.set-int("overlay_width_percent", v); }
+        }
+    }
+    Section {
+        title: "Startup";
+        SwitchRow {
+            title: "Launch at Startup";
+            subtitle: "Starts Iris when you sign in.";
+            checked: Prefs.launch-at-startup;
+            toggled(on) => { self.error = Prefs.set-bool("launch_at_startup", on); }
+        }
+        Separator { }
+        SwitchRow {
+            title: "Start Hidden on System Start";
+            subtitle: "Opens in the tray without showing the window.";
+            opacity: Prefs.launch-at-startup ? 1 : Metrics.disabled-alpha;
+            checked: Prefs.start-hidden;
+            toggled(on) => { self.error = Prefs.set-bool("start_hidden", on); }
         }
     }
 }

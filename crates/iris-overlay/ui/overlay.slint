@@ -72,8 +72,9 @@ export component OverlayWindow inherits Window {
     property <float> line-factor: 1.2;
     property <length> line-height: line-probe.preferred-height;
     property <length> notice-line: notice-probe.preferred-height;
-    // Where a message starts: 9 px right of its 14 px badge, centred in the row's end cap.
-    property <length> notice-x: 38px;
+    // Where a message starts: 9 px right of its 14 px badge. The badge (and the spinner) is centred in the row's end
+    // cap; under an open panel it starts where the text above does.
+    property <length> notice-x: root.panel-open ? root.pad-x + 23px : 38px;
     // Live text keeps its last `lines` lines; never taller than the window allows.
     property <length> live-max-height:
         min(root.lines * root.line-height, root.height - root.row-height - root.pad-top - 4px);
@@ -262,7 +263,8 @@ export component OverlayWindow inherits Window {
                 property <angle> b: self.a + 270deg;
                 width: 16px;
                 height: 16px;
-                x: (root.row-height - self.width) / 2;
+                // 1 px: the arc's inset in its box.
+                x: root.panel-open ? root.pad-x - 1px : (root.row-height - self.width) / 2;
                 y: (parent.height - self.height) / 2;
                 viewbox-width: 24;
                 viewbox-height: 24;
@@ -278,7 +280,7 @@ export component OverlayWindow inherits Window {
             Rectangle {
                 width: root.notice ? 14px : 0px;
                 height: self.width;
-                x: (root.row-height - self.width) / 2;
+                x: root.panel-open ? root.pad-x : (root.row-height - self.width) / 2;
                 y: (parent.height - notice-text.height + root.notice-line - self.height) / 2;
                 border-radius: self.width / 2;
                 background: root.mode == OverlayMode.warning ? #FBBF24 : #D32F2F;
@@ -287,7 +289,7 @@ export component OverlayWindow inherits Window {
             Path {
                 width: root.notice ? 8px : 5px;
                 height: self.width;
-                x: (root.row-height - self.width) / 2;
+                x: (root.panel-open ? root.pad-x + 7px : root.row-height / 2) - self.width / 2;
                 y: (parent.height - notice-text.height + root.notice-line - self.height) / 2;
                 viewbox-width: 24;
                 viewbox-height: 24;

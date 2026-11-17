@@ -87,8 +87,8 @@ pub fn run(start_hidden: bool, no_tray: bool) -> Result<(), slint::PlatformError
     // Before the first show: GNOME matches the window to iris.desktop by this id, else it docks a generic "iris".
     slint::set_xdg_app_id("iris")?;
     let store = Store::open(Store::default_path());
-    // Re-registers a login item whose app moved, removes a stale one.
-    if let Err(e) = autostart::apply(store.settings(&HashSet::new()).launch_at_startup) {
+    // Re-registers a login item whose app moved or whose settings changed elsewhere, removes a stale one.
+    if let Err(e) = autostart::apply(&store.settings(&HashSet::new())) {
         log::warn!("Updating the login item failed: {e}");
     }
     let dictation = Dictation::new(&runtime, store.settings(&HashSet::new()));
@@ -225,7 +225,7 @@ pub fn register_shortcut(state: &mut AppState) {
 /// settings, the stored keys, the shortcut, the model lists, the login item).
 pub fn after_restore(state: &mut AppState) {
     refresh(state);
-    if let Err(e) = autostart::apply(state.store.settings(&state.stored_secrets).launch_at_startup) {
+    if let Err(e) = autostart::apply(&state.store.settings(&state.stored_secrets)) {
         log::warn!("Updating the login item failed: {e}");
     }
     catalogs::restored(state);
@@ -269,6 +269,7 @@ pub fn refresh(state: &mut AppState) {
     prefs.set_duck_while_recording(settings.duck_while_recording);
     prefs.set_duck_amount(settings.duck_amount);
     prefs.set_launch_at_startup(settings.launch_at_startup);
+    prefs.set_start_hidden(settings.start_hidden);
     prefs.set_wayland(services::wayland());
     let unreadable = |name| state.unreadable_secrets.contains(name);
     prefs.set_openai_key_unreadable(unreadable(secrets::OPENAI_API_KEY));
@@ -387,15 +388,16 @@ fn set_bool(state: &mut AppState, key: &str, value: bool) -> SharedString {
         "mute_while_recording" => store.set_mute_while_recording(value),
         "duck_while_recording" => store.set_duck_while_recording(value),
         "launch_at_startup" => store.set_launch_at_startup(value),
+        "start_hidden" => store.set_start_hidden(value),
         _ => match key.strip_prefix("custom_cleanup_send_json_schema:") {
             Some(id) => store.update_custom_cleanup_provider(id, |p| p.send_json_schema = value),
             None => unreachable!("unknown bool setting {key}"),
         },
     };
     let error = saved(state, result);
-    if key == "launch_at_startup"
+    if matches!(key, "launch_at_startup" | "start_hidden")
         && error.is_empty()
-        && let Err(e) = autostart::apply(value)
+        && let Err(e) = autostart::apply(&state.store.settings(&state.stored_secrets))
     {
         log::warn!("Updating the login item failed: {e}");
         return autostart::ERROR.into();

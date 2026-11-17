@@ -169,6 +169,8 @@ pub struct Settings {
     pub duck_while_recording: bool,
     pub duck_amount: i32,
     pub launch_at_startup: bool,
+    /// Desktop: a start at login opens hidden in the tray.
+    pub start_hidden: bool,
 }
 
 impl Settings {
@@ -403,6 +405,7 @@ pub mod keys {
     pub const DUCK_WHILE_RECORDING: &str = "duck_while_recording";
     pub const DUCK_AMOUNT: &str = "duck_amount";
     pub const LAUNCH_AT_STARTUP: &str = "launch_at_startup";
+    pub const START_HIDDEN: &str = "start_hidden";
 }
 
 /// Custom words as providers may receive them: `<`, `>`, CR and LF removed, whitespace collapsed, trimmed; blanks,
@@ -549,6 +552,7 @@ pub fn to_settings(values: &Values, stored_secrets: &HashSet<String>) -> Result<
         duck_while_recording: boolean(values, keys::DUCK_WHILE_RECORDING)?.unwrap_or(false),
         duck_amount: int(values, keys::DUCK_AMOUNT)?.unwrap_or(DEFAULT_DUCK_AMOUNT),
         launch_at_startup: boolean(values, keys::LAUNCH_AT_STARTUP)?.unwrap_or(false),
+        start_hidden: boolean(values, keys::START_HIDDEN)?.unwrap_or(true),
     })
 }
 
@@ -793,6 +797,7 @@ mod tests {
         assert!(!settings.duck_while_recording);
         assert_eq!(50, settings.duck_amount);
         assert!(!settings.launch_at_startup);
+        assert!(settings.start_hidden);
     }
 
     #[test]
