@@ -1,15 +1,15 @@
 # Author: Jamius Siam
 # Since: 16/11/2026
 #
-# Every push to main: run iris-core's tests and build the Windows installer (NSIS) and the Linux .deb and AppImage
+# Run by hand ("Run workflow") on main. Fails at once unless the version in crates/iris/Cargo.toml is X.Y.Z and higher
+# than every v* tag. Then: run iris-core's tests and build the Windows installer (NSIS) and the Linux .deb and AppImage
 # (scripts/package.{ps1,sh}), uploaded as workflow artifacts. With the repository variable IRIS_ENGINE_TESTS set to
-# `true`, also run the ignored engine and VAD tests against a real model. If tag v<version> (crates/iris/Cargo.toml)
-# doesn't exist yet, create it on the pushed commit with a GitHub Release carrying the three packages.
+# `true`, also run the ignored engine and VAD tests against a real model. Last, create tag v<version> on the built
+# commit with a published GitHub Release carrying the three packages.
 name: Release
 
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: release
@@ -19,10 +19,42 @@ permissions:
   contents: read
 
 jobs:
-  core-tests:
+  version:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check the branch and the version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -o pipefail
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error::Releases are made from main, not $GITHUB_REF"
+            exit 1
+          fi
+          version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "iris").version')
+          if ! [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Version $version is not X.Y.Z"
+            exit 1
+          fi
+          latest=$(gh api "repos/$GITHUB_REPOSITORY/tags" --paginate --jq '.[].name' \
+            | { grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true; } | sed 's/^v//' | sort -V | tail -n 1)
+          # Equal or higher: the highest of the two is the released one.
+          if [ -n "$latest" ] && [ "$(printf '%s\n%s\n' "$version" "$latest" | sort -V | tail -n 1)" = "$latest" ]; then
+            echo "::error::Version $version isn't higher than the released v$latest: raise it in crates/iris/Cargo.toml"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  core-tests:
+    needs: version
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -39,13 +71,8 @@ jobs:
       - name: Test iris-core
         run: cargo test -p iris-core
 
-      - name: Read the version
-        id: version
-        run: |
-          version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "iris").version')
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
   windows:
+    needs: version
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -85,6 +112,7 @@ jobs:
           if-no-files-found: error
 
   linux:
+    needs: version
     # The oldest supported runner: the packages need its glibc or newer.
     runs-on: ubuntu-22.04
     steps:
@@ -128,6 +156,7 @@ jobs:
   # The ignored tests in crates/iris (engine supervisor, Silero VAD) against Nemotron, the streaming default model, and
   # a synthetic speech clip. The runner has no GPU, so the five tests that need one are skipped.
   engine-tests:
+    needs: version
     if: vars.IRIS_ENGINE_TESTS == 'true'
     runs-on: ubuntu-22.04
     env:
@@ -190,7 +219,7 @@ jobs:
             --skip pinned_device_fails_loudly
 
   release:
-    needs: [core-tests, windows, linux, engine-tests]
+    needs: [version, core-tests, windows, linux, engine-tests]
     # Also when engine-tests was skipped (variable unset); never after a failure.
     if: ${{ !cancelled() && !failure() }}
     runs-on: ubuntu-latest
@@ -202,14 +231,10 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: Release a new version
+      - name: Release the new version
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ needs.core-tests.outputs.version }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
-          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$VERSION" --silent 2>/dev/null; then
-            echo "v$VERSION is already released"
-          else
-            gh release create "v$VERSION" dist/* --repo "$GITHUB_REPOSITORY" \
-              --target "$GITHUB_SHA" --title "Iris $VERSION"
-          fi
+          gh release create "v$VERSION" dist/* --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" --title "Iris $VERSION" --generate-notes

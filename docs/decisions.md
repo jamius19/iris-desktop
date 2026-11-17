@@ -6,7 +6,8 @@ Started 16/11/2026 (M1). Newest entries at the end of each section.
 - **Q1 Moonshine**: dropped on desktop. Four local models: Nemotron Streaming English (default), Parakeet Unified
   English, Parakeet TDT v3, Whisper Small. A stored `moonshine-base-en` (e.g. from an Android backup) stays in the file
   but reads as the default.
-- **Q2 Releases**: a GitHub release workflow in M4, Android's pattern (push to `main` → build, test, tag, release).
+- **Q2 Releases**: a GitHub release workflow in M4, Android's pattern (push to `main` → build, test, tag, release);
+  since changed to a manual run, see Release workflow below.
 - **Q3 `--toggle-transcription` with Iris not running**: just starts Iris (Handy's behaviour).
 
 ## Defaults the user can still object to (set when planning)
@@ -326,12 +327,15 @@ Throwaway code stayed in the session scratch directory; none of it is in the rep
   `libtranscribe`); the .deb ships the real binary at `/usr/bin/iris` with `/usr/lib/iris` on its rpath. The .deb's
   postinst/postrm reload udev and re-trigger only keyboards and uinput (skipped without `/run/udev`). The NSIS
   uninstaller removes the startup entry except during an upgrade (`/P`).
-- **Release workflow** (`.github/workflows/release.yml`): on push to `main`: core tests, NSIS (windows-latest, Vulkan
+- **Release workflow** (`.github/workflows/release.yml`): run by hand on `main` (not Android's push trigger: a
+  release is a choice, and a push shouldn't pay for a package build). It first fails unless the version in
+  `crates/iris/Cargo.toml` is `X.Y.Z` and higher than every `v*` tag. Then core tests, NSIS (windows-latest, Vulkan
   SDK + vcpkg SPIRV-Headers as Handy), .deb + AppImage (ubuntu-22.04), the `#[ignore]` engine tests only when the
   repository variable `IRIS_ENGINE_TESTS` is `true` (Nemotron downloaded at its pinned revision and hash, a WAV from
-  espeak-ng; the five GPU-only tests are skipped on runners without a GPU), then tag `v<version>` + GitHub Release if
-  the tag doesn't exist. Actions pinned by commit SHA; only the release job can write. The Rust toolchain is pinned to
-  1.99 (the version the tests ran with), so a new stable release can't change a release build without a commit.
+  espeak-ng; the five GPU-only tests are skipped on runners without a GPU), then tag `v<version>` + a published GitHub
+  Release with generated notes. Actions pinned by commit SHA; only the release job can write. The Rust toolchain is
+  pinned to 1.99 (the version the tests ran with), so a new stable release can't change a release build without a
+  commit.
 
 ## Known limitations
 - Unsigned Windows installer: SmartScreen warns on first run.

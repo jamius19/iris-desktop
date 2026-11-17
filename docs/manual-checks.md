@@ -186,8 +186,9 @@ real backup checks), there was no real Linux desktop, and no packaging tool was 
 - [ ] `scripts/package.sh` builds the .deb and AppImage; .deb on Ubuntu 24.04 and Debian 12: the hotkey works right
       after install (udev trigger), paste works, uninstall reloads udev; AppImage on Fedora KDE (Setup button installs
       the udev rule).
-- [ ] The release workflow on the first push to `main`: all jobs pass, tag `v<version>` and a release with three
-      artefacts; with `IRIS_ENGINE_TESTS=true` the engine tests pass on the runner.
+- [ ] The release workflow, run by hand on `main`: all jobs pass, tag `v<version>` and a release with three
+      artefacts; with `IRIS_ENGINE_TESTS=true` the engine tests pass on the runner. A second run without raising the
+      version fails in the `version` job, as does a run on another branch.
 
 Checked by the implementers on 16/11/2026: backup format both ways on the JVM (see `decisions.md`, M4 Backup);
 Windows release `iris.exe --help` / `--version` / a bad flag print in PowerShell; autostart enable / re-enable /
