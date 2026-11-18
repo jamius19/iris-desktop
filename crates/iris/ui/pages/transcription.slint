@@ -119,6 +119,8 @@ export component TranscriptionPage inherits PageScaffold {
             }
             if !Prefs.model-downloading && !Prefs.model-deleting && Prefs.model-downloaded: HorizontalLayout {
                 VerticalLayout {
+                    // Takes the row's spare width, so the button keeps its own.
+                    horizontal-stretch: 1;
                     Label {
                         text: "Downloaded";
                         style: Type.subtitle;
@@ -132,6 +134,7 @@ export component TranscriptionPage inherits PageScaffold {
                     }
                 }
                 VerticalLayout {
+                    horizontal-stretch: 0;
                     alignment: center;
                     DangerButton {
                         text: "Delete";
