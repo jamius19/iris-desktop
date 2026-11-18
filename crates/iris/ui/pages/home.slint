@@ -81,6 +81,12 @@ export component HomePage inherits PageScaffold {
         clicked => { root.open(4); }
     }
     NavCard {
+        icon: Icons.rotate-ccw-clock;
+        title: "History";
+        subtitle: "Your recent dictations";
+        clicked => { root.open(9); }
+    }
+    NavCard {
         icon: Icons.gauge;
         title: "Statistics";
         subtitle: "Transcription and cleanup times and usage";

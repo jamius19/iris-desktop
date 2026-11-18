@@ -8,8 +8,8 @@ using. It is the desktop version of the Iris Android app, with the same settings
 - **Post processing**: filler-word removal, Custom Words, and optional LLM cleanup (Vercel AI Gateway, OpenRouter or
   any OpenAI-compatible server) with your own prompts.
 - A small overlay while you dictate (live text, cancel with ✕ or Esc), a tray icon, start/stop sounds, muting or
-  lowering other audio while you dictate, launch at startup, statistics, and encrypted backups that move between Iris
-  on Android and desktop.
+  lowering other audio while you dictate, launch at startup, statistics, a history of recent dictations, and encrypted
+  backups that move between Iris on Android and desktop.
 
 API keys are kept in the system keychain (Windows Credential Manager, the Secret Service on Linux), never in a file.
 
@@ -103,9 +103,9 @@ which can mangle non-English text; Ctrl+V (the default) is more reliable. On X11
 ## Backup and restore
 Home → Backup and Restore saves all settings, prompts, custom providers and API keys to a password-protected
 `.irisbackup` file (AES-256-GCM, PBKDF2-SHA256 with 600,000 iterations). The same file restores on Iris for Android
-and on desktop. Statistics and downloaded models aren't included. A restore replaces all settings, so restoring a
-backup made on the other platform resets this one's own settings to their defaults (on desktop: the shortcut, paste,
-sounds and Launch at Startup).
+and on desktop. Statistics, dictation history and downloaded models aren't included. A restore replaces all
+settings, so restoring a backup made on the other platform resets this one's own settings to their defaults (on
+desktop: the shortcut, paste, sounds, Launch at Startup and the History settings).
 
 ## Build from source
 Needs Rust 1.92+, CMake and the Vulkan SDK (Windows: MSVC Build Tools and the LunarG SDK; Linux: `libvulkan-dev

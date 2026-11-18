@@ -199,6 +199,7 @@ export component SelectDropdown inherits Rectangle {
     in property <string> selected;
     in property <string> label;
     in property <bool> has-error;
+    in property <bool> enabled: true;
     callback picked(id: string);
     property <int> index: UiMath.index-of(self.options, self.selected);
     property <SelectOption> current: self.index >= 0 ? self.options[self.index] : { label: "" };
@@ -211,7 +212,12 @@ export component SelectDropdown inherits Rectangle {
     accessible-value: self.current.label;
     accessible-expandable: true;
     accessible-expanded: panel.is-open;
-    accessible-action-expand => { self.open(); }
+    accessible-enabled: self.enabled;
+    accessible-action-expand => {
+        if self.enabled {
+            self.open();
+        }
+    }
 
     function open() {
         Nav.focus-root();
@@ -269,10 +275,12 @@ export component SelectDropdown inherits Rectangle {
             : touch.has-hover ? Theme.hover-overlay-on-control : transparent;
     }
     touch := TouchArea {
+        enabled: root.enabled;
         mouse-cursor: pointer;
         clicked => { root.open(); }
     }
     focus := FocusScope {
+        enabled: root.enabled;
         focus-on-click: false;
         focus-gained(reason) => { root.keyboard-focus = reason == FocusReason.tab-navigation; }
         key-pressed(event) => {
@@ -308,15 +316,17 @@ export component SelectDropdown inherits Rectangle {
     }
 }
 
-// A labelled SelectDropdown; the page saves the pick and puts the error back into `error`.
+// A labelled SelectDropdown; the page saves the pick and puts the error back into `error`. Not `enabled`: can't open.
 export component SelectField inherits FieldGroup {
     in property <[SelectOption]> options;
     in property <string> selected;
+    in property <bool> enabled: true;
     callback picked(id: string);
     SelectDropdown {
         options: root.options;
         selected: root.selected;
         label: root.label;
+        enabled: root.enabled;
         picked(id) => { root.picked(id); }
     }
 }

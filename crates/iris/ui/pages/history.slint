@@ -1,0 +1,161 @@
+/*
+* Author: Jamius Siam
+* Since: 18/11/2026
+*/
+
+// Desktop addition (Handy's History; Android has none): the History switch and limit, then the saved dictations,
+// newest first, each with its time, the transcript and, when post processing changed it, the post processed text;
+// copy buttons and delete. Off: the list is hidden, not deleted (Clear History stays), and the limit is locked.
+
+import { Theme, Type, Icons, Metrics } from "../theme.slint";
+import { Prefs, HistoryList, HistoryItem } from "../globals.slint";
+import { Label, Card, Separator } from "../components/basics.slint";
+import { SwitchRow } from "../components/rows.slint";
+import { SelectField } from "../components/dropdowns.slint";
+import { IconAction, DangerButton } from "../components/buttons.slint";
+import { PageScaffold } from "../components/page.slint";
+
+// A caption with the copy button on its right, then the selectable text.
+component HistoryText inherits VerticalLayout {
+    in property <string> caption;
+    in property <string> text;
+    // "<id>:raw" or "<id>:final".
+    in property <string> key;
+    in property <string> copy-label;
+    HorizontalLayout {
+        spacing: 7px;
+        Label {
+            text: root.caption;
+            style: Type.helper-bold;
+            color: Theme.muted;
+            wrap: no-wrap;
+            horizontal-stretch: 1;
+        }
+        IconAction {
+            icon: HistoryList.copied == root.key ? Icons.check : Icons.copy;
+            label: root.copy-label;
+            clicked => { HistoryList.copy(root.key, root.text); }
+        }
+    }
+    TextInput {
+        text: root.text;
+        read-only: true;
+        single-line: false;
+        wrap: word-wrap;
+        font-family: Type.field.family;
+        font-weight: Type.field.weight;
+        font-size: Type.field.size;
+        color: Theme.text;
+        selection-background-color: Theme.selection;
+        selection-foreground-color: Theme.text;
+    }
+}
+
+component HistoryCard inherits Card {
+    in property <HistoryItem> item;
+    // Slint 1.18.1 (#14863): a card with wrapped text inside a `for` in a VerticalLayout gets its preferred height
+    // measured at the wrong width, so the page can't scroll to the end; size it from its own layout.
+    preferred-height: inner.preferred-height + 2 * self.vertical-padding;
+    min-height: self.preferred-height;
+    inner := VerticalLayout {
+        spacing: 7px;
+        HorizontalLayout {
+            spacing: 7px;
+            Label {
+                text: root.item.time;
+                style: Type.subtitle;
+                color: Theme.muted;
+                wrap: no-wrap;
+                horizontal-stretch: 1;
+            }
+            IconAction {
+                icon: Icons.trash;
+                tint: Theme.failure;
+                label: "Delete entry from " + root.item.time;
+                clicked => { HistoryList.delete(root.item.id); }
+            }
+        }
+        HistoryText {
+            caption: "Transcript";
+            text: root.item.raw;
+            key: "\{root.item.id}:raw";
+            copy-label: "Copy transcript";
+        }
+        if root.item.final-text != "": Separator { }
+        if root.item.final-text != "": HistoryText {
+            caption: "Post Processed";
+            text: root.item.final-text;
+            key: "\{root.item.id}:final";
+            copy-label: "Copy post processed text";
+        }
+        if HistoryList.failed == "\{root.item.id}:raw" || HistoryList.failed == "\{root.item.id}:final": Label {
+            text: HistoryList.copy-error;
+            style: Type.helper;
+            color: Theme.failure;
+            accessible-role: text;
+        }
+    }
+}
+
+export component HistoryPage inherits PageScaffold {
+    title: "History";
+
+    Card {
+        SwitchRow {
+            title: "Save History";
+            subtitle: "Keeps your recent dictations on this computer.";
+            checked: Prefs.history-enabled;
+            toggled(on) => { self.error = Prefs.set-bool("history_enabled", on); }
+        }
+        Separator { }
+        SelectField {
+            label: "History Limit";
+            helper: "Maximum number of history entries to keep.";
+            opacity: Prefs.history-enabled ? 1 : Metrics.disabled-alpha;
+            enabled: Prefs.history-enabled;
+            // HISTORY_LIMITS in iris-core.
+            options: [
+                { id: "5", label: "5" },
+                { id: "10", label: "10" },
+                { id: "20", label: "20" },
+                { id: "50", label: "50" },
+                { id: "100", label: "100" },
+                { id: "200", label: "200" },
+            ];
+            selected: Prefs.history-limit;
+            picked(id) => { self.error = Prefs.set-int("history_limit", id.to-float()); }
+        }
+    }
+    if !Prefs.history-enabled: Label {
+        text: "History is off. Turn it on to save new dictations and see the saved ones.";
+        style: Type.helper;
+        color: Theme.muted;
+    }
+    if Prefs.history-enabled && HistoryList.items.length == 0: Card {
+        VerticalLayout {
+            spacing: 3px;
+            Label {
+                text: "No history yet";
+            }
+            Label {
+                text: "Dictate to see what you said here.";
+                style: Type.subtitle;
+                color: Theme.muted;
+            }
+        }
+    }
+    if Prefs.history-enabled && HistoryList.items.length > 0: VerticalLayout {
+        spacing: 14px;
+        for item in HistoryList.items: HistoryCard {
+            item: item;
+        }
+    }
+    // Also while off, so the saved entries can be cleared without turning History back on.
+    if HistoryList.items.length > 0: HorizontalLayout {
+        alignment: start;
+        DangerButton {
+            text: "Clear History";
+            clicked => { HistoryList.clear(); }
+        }
+    }
+}

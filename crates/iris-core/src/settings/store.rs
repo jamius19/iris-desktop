@@ -413,6 +413,14 @@ impl Store {
         self.set(keys::START_HIDDEN, Value::Boolean(enabled))
     }
 
+    pub fn set_history_enabled(&mut self, enabled: bool) -> io::Result<()> {
+        self.set(keys::HISTORY_ENABLED, Value::Boolean(enabled))
+    }
+
+    pub fn set_history_limit(&mut self, limit: i32) -> io::Result<()> {
+        self.set(keys::HISTORY_LIMIT, Value::Int(limit))
+    }
+
     fn set(&mut self, key: &str, value: Value) -> io::Result<()> {
         self.edit(|values| {
             put(values, key, value);
@@ -662,6 +670,8 @@ mod tests {
         store.set_overlay_width_percent(20).unwrap();
         store.set_launch_at_startup(true).unwrap();
         store.set_start_hidden(false).unwrap();
+        store.set_history_enabled(false).unwrap();
+        store.set_history_limit(50).unwrap();
 
         let settings = settings(&Store::open(path));
         assert_eq!("gpt-transcribe", settings.stt_model);
@@ -677,6 +687,8 @@ mod tests {
         assert_eq!(model::DEFAULT_PANEL_WIDTH_PERCENT, settings.panel_width_percent);
         assert!(settings.launch_at_startup);
         assert!(!settings.start_hidden);
+        assert!(!settings.history_enabled);
+        assert_eq!(50, settings.history_limit);
     }
 
     #[test]

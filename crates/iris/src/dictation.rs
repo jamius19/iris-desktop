@@ -7,8 +7,8 @@
 //! instances, SIGUSR2, the overlay's ✕) go to the hold-or-toggle coordinator, which starts and stops the dictation
 //! controller; the controller's state drives the overlay, the tray, the sounds, muting or lowering other audio, the
 //! cancel shortcut and the idle unload; a final transcript is cleaned up (if enabled) and pasted. The controller, the
-//! on-device provider, the engine's loads and the cleanup feed [`Statistics`]. Settings reach the worker threads
-//! through a `watch` updated on every change.
+//! on-device provider, the engine's loads and the cleanup feed [`Statistics`]. Each delivered dictation is kept in
+//! [`History`]. Settings reach the worker threads through a `watch` updated on every change.
 
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
@@ -19,6 +19,7 @@ use iris_core::cleanup::{CleanupRequest, timed_cleanup, with_glossary};
 use iris_core::dictation::DictationState;
 use iris_core::dictation::controller::{Deps, DictationController};
 use iris_core::dictation::coordinator::{Activation, Coordinator};
+use iris_core::dictation::history::History;
 use iris_core::dictation::language::detect_language;
 use iris_core::dictation::statistics::Statistics;
 use iris_core::settings::{Settings, default_prompt};
@@ -45,6 +46,7 @@ pub struct Dictation {
     pub settings: Arc<watch::Sender<Settings>>,
     pub sounds: Sounds,
     pub statistics: Statistics,
+    pub history: History,
 }
 
 impl Dictation {
@@ -56,6 +58,8 @@ impl Dictation {
             runtime.handle().clone(),
             Box::new(move || speed_settings.borrow().stt_speed_percent),
         );
+        let history =
+            History::new(crate::project_dirs().data_local_dir().join("history.json"), runtime.handle().clone());
         // The store waits for the engine to release a model before deleting it; the engine reads models from it.
         let engine_cell: Arc<OnceLock<LocalEngine>> = Arc::new(OnceLock::new());
         let release = engine_cell.clone();
@@ -93,6 +97,7 @@ impl Dictation {
             (providers.clone(), providers.clone(), providers.clone());
         let warm_runtime = runtime.handle().clone();
         let (dictation_stats, cleanup_stats) = (statistics.clone(), statistics.clone());
+        let final_history = history.clone();
         let controller = DictationController::new(
             runtime.handle().clone(),
             Deps {
@@ -104,9 +109,11 @@ impl Dictation {
                     let _runtime = warm_runtime.enter();
                     warm_providers.cleanup(s).warm_up();
                 }),
-                on_final_transcript: Box::new(move |text| {
+                on_final_transcript: Box::new(move |raw, text| {
                     let settings = paste_settings.borrow().clone();
-                    Box::pin(deliver(text, settings, final_providers.clone(), cleanup_stats.clone()))
+                    let (providers, stats, history) =
+                        (final_providers.clone(), cleanup_stats.clone(), final_history.clone());
+                    Box::pin(deliver(raw, text, settings, paste_settings.clone(), providers, stats, history))
                 }),
                 vad_model: Box::new(move || local::vad::scorer_off_thread(data_dir.clone())),
                 detect_language: Box::new(|text| {
@@ -131,7 +138,7 @@ impl Dictation {
         });
         let sounds = Sounds::start();
         let dictation =
-            Self { controller, coordinator, hotkeys, store, engine, providers, settings, sounds, statistics };
+            Self { controller, coordinator, hotkeys, store, engine, providers, settings, sounds, statistics, history };
         runtime.spawn(dictation.clone().follow_state());
         dictation
     }
@@ -216,12 +223,16 @@ fn cancel_listening(controller: &DictationController, coordinator: &Coordinator)
 
 /// Android `IrisAccessibilityService.onFinalTranscript`: the optional LLM cleanup, then the paste. A failed or
 /// timed-out cleanup pastes the original transcript, and a failed paste leaves the text on the clipboard, so the
-/// dictation is never lost.
+/// dictation is never lost. The dictation goes to History whatever the paste's outcome, by the `live` settings, so
+/// History turned off meanwhile isn't recorded.
 async fn deliver(
+    raw: String,
     transcript: String,
     settings: Settings,
+    live: Arc<watch::Sender<Settings>>,
     providers: Providers,
     statistics: Statistics,
+    history: History,
 ) -> DictationState {
     let mut text = transcript.clone();
     let mut cleanup_error = None;
@@ -259,6 +270,7 @@ async fn deliver(
             })
         }
     };
+    history.record(&live.borrow(), chrono::Utc::now().timestamp_millis(), &raw, &text);
     if paste_notice.as_deref().is_some_and(paste::is_not_copied) {
         crate::ui::recovery::keep(text.clone());
     }

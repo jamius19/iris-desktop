@@ -198,3 +198,25 @@ carries the icon and "Iris" version info; software-renderer captures (dark mode)
 footer "Up to date" and its re-check, the Statistics empty state, the Backup page (button enabling, the save and open
 dialogs appearing parented with the right name and filter, then cancelled), About → Rust libraries scrolling, Esc back
 from both new pages.
+
+## History
+- [ ] Home shows "History" after Appearance; it opens the History page; back/Esc/Alt+Left return Home.
+- [ ] Dictate with cleanup off and filler removal on (say "um"): the entry shows the time ("18 Nov 2026, 2:05 PM",
+      local, 12-hour), "Transcript" with the raw text and "Post Processed" with the final text; with nothing changed,
+      only "Transcript" and the raw text show.
+- [ ] With cleanup on: final = cleaned text; with a failing/timed-out cleanup: final = the processed transcript.
+- [ ] A failed, no-speech or cancelled dictation adds nothing; a dictation whose paste failed is still added.
+- [ ] Copy buttons put the right text on the clipboard and show a check for about 1.5 s; Esc still goes back after
+      selecting text in an entry.
+- [ ] Delete removes one entry; Clear History removes all; both survive a restart.
+- [ ] Limit 200 with many entries, then 5: only the 5 newest remain at once (also after a restart).
+- [ ] History off: new dictations aren't saved, the list is hidden with the note; on again: the old entries return.
+- [ ] History off with entries saved: Clear History shows below the note and clears them; the History Limit dropdown
+      is dimmed and can't be opened (click, keyboard, Tab). Turning History off while a cleanup runs: that dictation
+      isn't saved.
+- [ ] Long entries (several wrapped lines) at the end of a long list: the page scrolls to the very end (Slint #14863
+      workaround), on femtovg and `SLINT_BACKEND=winit-software`; 200 entries scroll smoothly.
+- [ ] Backup → restore keeps the toggle and limit; the entries stay, except that a lower restored limit trims the
+      oldest.
+- [ ] `history.json` is in `%LOCALAPPDATA%\jamius\Iris\data` (Linux `~/.local/share/iris`); the log (`--debug`)
+      contains no transcript text.

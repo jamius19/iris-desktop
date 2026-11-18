@@ -10,6 +10,7 @@
 mod about;
 mod backup;
 mod catalogs;
+mod history;
 mod keys;
 mod post_processing;
 pub mod recovery;
@@ -130,6 +131,7 @@ pub fn run(start_hidden: bool, no_tray: bool) -> Result<(), slint::PlatformError
     about::fill(&window);
     services::wire(&window);
     statistics::wire(&window, &runtime, &dictation);
+    history::wire(&window, &runtime, &dictation);
     backup::wire(&window);
     update::wire(&window);
     wire_dictation(&window, &runtime, &dictation);
@@ -252,6 +254,8 @@ pub fn refresh(state: &mut AppState) {
         tray.set_app_dark(state.window.get_dark());
     }
     state.dictation.settings.send_replace(settings.clone());
+    // A lowered limit drops the oldest entries at once.
+    state.dictation.history.trim(settings.history_limit);
     state.dictation.engine.settings_changed();
     warm_on_device(state, &settings, &downloads);
     let prefs = state.window.global::<Prefs>();
@@ -270,6 +274,8 @@ pub fn refresh(state: &mut AppState) {
     prefs.set_duck_amount(settings.duck_amount);
     prefs.set_launch_at_startup(settings.launch_at_startup);
     prefs.set_start_hidden(settings.start_hidden);
+    prefs.set_history_enabled(settings.history_enabled);
+    prefs.set_history_limit(settings.history_limit);
     prefs.set_wayland(services::wayland());
     let unreadable = |name| state.unreadable_secrets.contains(name);
     prefs.set_openai_key_unreadable(unreadable(secrets::OPENAI_API_KEY));
@@ -389,6 +395,7 @@ fn set_bool(state: &mut AppState, key: &str, value: bool) -> SharedString {
         "duck_while_recording" => store.set_duck_while_recording(value),
         "launch_at_startup" => store.set_launch_at_startup(value),
         "start_hidden" => store.set_start_hidden(value),
+        "history_enabled" => store.set_history_enabled(value),
         _ => match key.strip_prefix("custom_cleanup_send_json_schema:") {
             Some(id) => store.update_custom_cleanup_provider(id, |p| p.send_json_schema = value),
             None => unreachable!("unknown bool setting {key}"),
@@ -418,6 +425,7 @@ fn set_int(state: &mut AppState, key: &str, value: i32) -> SharedString {
         "paste_delay_after_ms" => store.set_paste_delay_after_ms(value),
         "feedback_volume_percent" => store.set_feedback_volume_percent(value),
         "duck_amount" => store.set_duck_amount(value),
+        "history_limit" => store.set_history_limit(value),
         _ => unreachable!("unknown int setting {key}"),
     };
     saved(state, result)
