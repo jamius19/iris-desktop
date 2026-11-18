@@ -28,7 +28,7 @@ const LICENSE_FILE_PREFIXES: [&str; 5] = ["LICENSE", "LICENCE", "COPYING", "NOTI
 
 /// Lucide icon and the stroke width Android tuned for the size it is drawn at (from its `lucide_*.xml`); the
 /// desktop-only icons take the width of the Android icon used in the same place.
-const LUCIDE_ICONS: [(&str, &str); 26] = [
+const LUCIDE_ICONS: [(&str, &str); 28] = [
     ("arrow-down", "1.5"),
     ("arrow-right", "2.2"),
     ("audio-lines", "1.64"),
@@ -55,6 +55,8 @@ const LUCIDE_ICONS: [(&str, &str); 26] = [
     ("clipboard-paste", "1.64"),
     ("info", "1.5"),
     ("x", "1.5"),
+    ("copy", "1.5"),
+    ("rotate-ccw-clock", "1.5"),
 ];
 
 const APP_ICON_SIZES: [u32; 10] = [16, 20, 24, 32, 40, 48, 64, 128, 256, 512];

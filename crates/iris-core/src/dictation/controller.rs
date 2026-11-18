@@ -74,10 +74,10 @@ pub struct Deps {
     /// Warms the connection of the cleanup provider for a session's settings; called as recording starts and again
     /// on stop if cleanup is enabled, so the cleanup call finds a warm connection. Must return at once.
     pub warm_up_cleanup: Box<dyn Fn(&Settings) + Send + Sync>,
-    /// Called with the final text of each successful session (fillers removed and custom words corrected, as the
-    /// settings say); returns the [`DictationState::Done`] to show. It runs inside the session (still Finalizing):
-    /// cancelling the session cancels it.
-    pub on_final_transcript: Box<dyn Fn(String) -> BoxFuture<'static, DictationState> + Send + Sync>,
+    /// Called with the raw transcript (as the provider returned it) and the final text of each successful session
+    /// (fillers removed and custom words corrected, as the settings say); returns the [`DictationState::Done`] to
+    /// show. It runs inside the session (still Finalizing): cancelling the session cancels it.
+    pub on_final_transcript: Box<dyn Fn(String, String) -> BoxFuture<'static, DictationState> + Send + Sync>,
     /// A new VAD scorer (16 kHz frame → speech probability) for each session with Skip Silence on; it may load a
     /// model, so the app builds it off the async workers.
     pub vad_model: Box<dyn Fn() -> BoxFuture<'static, VadScorer> + Send + Sync>,
@@ -311,13 +311,14 @@ async fn session(inner: Arc<Inner>, generation: u64) -> Result<DictationState, S
     let (recorded_ms, sent_ms) = (ms(audio.recorded_bytes, rate) as i64, ms(audio.sent_bytes, rate) as i64);
     // Releases the microphone as soon as the provider is done with it (a transcript before the stop).
     drop(audio);
-    let text = without_fillers(&inner, transcript?, &config).await;
+    let raw = transcript?;
+    let text = without_fillers(&inner, raw.clone(), &config).await;
     let text =
         if config.correct_similar_words { correct_custom_words(&text, config.active_custom_words()) } else { text };
     if text.trim().is_empty() {
         return Ok(DictationState::Error { message: NO_SPEECH.into() });
     }
-    let done = (inner.deps.on_final_transcript)(text).await;
+    let done = (inner.deps.on_final_transcript)(raw, text).await;
     if let (Some(stop), DictationState::Done { text, .. }) = (stop, &done) {
         // Soniox real-time bills the whole stream; Speed shortens what the others get.
         let billed_ms = if !stt.allows_speed_up() {

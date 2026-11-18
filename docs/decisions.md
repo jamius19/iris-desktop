@@ -313,6 +313,23 @@ Throwaway code stayed in the session scratch directory; none of it is in the rep
 - **Lost transcript**: when the text could be neither pasted nor copied, Home shows a card "Last dictation wasn't
   inserted" with the text, Copy and Dismiss (new copy, plus "Couldn't copy. Select the text and press Ctrl+C."). Memory
   only; replaced by the next such failure.
+- **History** (18/11/2026): Handy's feature (Android has none). Settings `history_enabled` (default on) and
+  `history_limit` (5/10/20/50/100/200, default 20, Handy's "History Limit") live in `settings.json`, so they are
+  backed up; the items live in `<data>/history.json` (local, not roaming; plain text, not encrypted; not in backups;
+  a restore that lowers the limit trims them at once). Only dictations that reached delivery are saved, whatever the
+  paste's outcome (failed, no-speech and cancelled sessions never do). Each item keeps the provider's raw transcript
+  (before filler and custom words) under the caption "Transcript" and, only when different, the pasted text under
+  "Post Processed". Off hides the list behind a note and keeps the file; Clear History stays available and the limit
+  is locked while off. Lowering the limit trims at once (`ui::refresh`, so also after a restore and at start); Clear
+  History has no confirmation (as Reset Statistics). Timestamps are local time, 12-hour ("18 Nov 2026, 2:05 PM").
+  Icons `rotate-ccw-clock` (no `history` icon at the pinned Lucide commit) and `copy`. New copy: "History" / "Your
+  recent dictations", "Save History" / "Keeps your recent dictations on this computer.", "History Limit" / "Maximum
+  number of history entries to keep." (Handy's, with a full stop), "History is off. Turn it on to save new dictations
+  and see the saved ones.", "No history yet" / "Dictate to see what you said here.", "Clear History", "Transcript",
+  "Post Processed", "Copy transcript", "Copy post processed text", "Delete entry from <time>"; a failed copy reuses
+  the lost-transcript text. The item cards size themselves from their own layout (a workaround for Slint 1.18.1
+  #14863: a card with wrapped text inside a `for` in a VerticalLayout gets its preferred height measured at the wrong
+  width, so the page can't scroll to the end).
 - **Model delete during a dictation**: loading a model the store no longer counts as downloaded fails with "Download
   the … model in Iris settings". **Warm-up** runs only once the selected model is downloaded (also from the download
   watcher).

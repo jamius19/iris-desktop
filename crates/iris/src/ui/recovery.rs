@@ -11,7 +11,7 @@ use slint::{ComponentHandle, SharedString};
 use super::{AppState, with_state};
 use crate::{MainWindow, Services};
 
-const COPY_FAILED: &str = "Couldn't copy. Select the text and press Ctrl+C.";
+pub(super) const COPY_FAILED: &str = "Couldn't copy. Select the text and press Ctrl+C.";
 
 pub fn wire(window: &MainWindow) {
     let services = window.global::<Services>();

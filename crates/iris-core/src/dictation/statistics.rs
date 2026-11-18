@@ -280,7 +280,7 @@ impl Statistics {
 }
 
 /// Writes a temp file next to `path`, then renames it over it.
-fn write(path: &Path, contents: &str) -> io::Result<()> {
+pub(super) fn write(path: &Path, contents: &str) -> io::Result<()> {
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir)?;
     }

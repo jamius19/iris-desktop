@@ -39,7 +39,7 @@ without CMake/Vulkan. `iris-overlay` lets the Windows app and the Linux helper c
    the overlay ✕, tray Cancel) go to the **coordinator** (Handy's hold-or-toggle machine), which starts and stops the
    **DictationController** (Android's `Idle → Listening → Finalizing → Done | Error → Idle`, hold times 1.5 s / 3 s).
 2. A session: capture → VAD gate → Audio Speed → provider → filler words → custom words → cleanup → paste →
-   statistics. State goes out on a `watch` channel; audio levels on a separate one.
+   history, statistics. State goes out on a `watch` channel; audio levels on a separate one.
 3. Subscribers (`crates/iris/src/dictation.rs`): overlay host, cancel shortcut, idle unload, tray icon, sounds and
    other audio (mute or lower).
 4. Settings changes: Slint callback → `Store::set_*` (validated, atomic write) → `refresh` → `watch<Settings>` for the
@@ -75,6 +75,7 @@ like an error leaving; an error or warning replaces the control row's content un
 |---|---|---|
 | Settings | Windows `%APPDATA%\jamius\Iris\config\settings.json`; Linux `~/.config/iris/settings.json` | `{"version":1,"settings":{name:{"type","value"}}}` = Android's backup `settings` object; unknown keys kept |
 | Statistics | `<config>/statistics.json` | `{"models","cloud","cleanup","totals"}`, Android's field names. Not in backups. |
+| History | Windows `%LOCALAPPDATA%\jamius\Iris\data\history.json`; Linux `~/.local/share/iris/history.json` | `{"entries":[{"id","timestampMs","raw","finalText"?}]}`, newest first. Not in backups. |
 | API keys | OS keychain, service `dev.jamius.iris`, account = Android pref name | plain secret, never logged |
 | Models | Windows `%LOCALAPPDATA%\jamius\Iris\data\models\<id>\`; Linux `~/.local/share/iris/models/<id>/` | one `.gguf` (`.tmp` while downloading) |
 | VAD model | `<data>/vad/silero-vad-v6.2-F32.gguf`, written from the binary when missing | GGUF |
@@ -88,7 +89,7 @@ Android-only `bubble_side` / `bubble_y_fraction` are kept and unused. Desktop-on
 keys): `overlay_position`, `overlay_width_percent`, `microphone_device`, `local_accelerator`, `shortcut_transcribe`,
 `shortcut_cancel`, `shortcut_activation`, `paste_method`, `append_trailing_space`, `restore_clipboard`,
 `paste_delay_ms`, `paste_delay_after_ms`, `feedback_sounds`, `feedback_volume_percent`, `mute_while_recording`,
-`duck_while_recording`, `duck_amount`, `launch_at_startup`, `start_hidden`.
+`duck_while_recording`, `duck_amount`, `launch_at_startup`, `start_hidden`, `history_enabled`, `history_limit`.
 
 ### Backup file (`.irisbackup`, identical to Android's)
 `IRISBKUP` (8) · format version 1 (1) · PBKDF2 iterations, u32 big-endian (4) · salt (16) · nonce (12) — this 41-byte

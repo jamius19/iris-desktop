@@ -205,6 +205,8 @@ export global Prefs {
     in property <int> duck-amount;
     in property <bool> launch-at-startup;
     in property <bool> start-hidden;
+    in property <bool> history-enabled;
+    in property <int> history-limit;
     in property <bool> wayland;
     // Shortcuts: the bindings as key caps; `recording-shortcut` is the one being recorded ("transcribe", "cancel"
     // or ""), `recording-caps` the keys held so far.
@@ -339,6 +341,26 @@ export global Stats {
     in property <bool> has-cloud;
     in property <bool> has-cleanup;
     callback reset();
+}
+
+// One History entry; `final-text` is "" when it equals `raw`.
+export struct HistoryItem {
+    id: int,
+    time: string,
+    raw: string,
+    final-text: string,
+}
+
+// The History page, refilled whenever the history changes. `copied` is the key ("<id>:raw" or "<id>:final") of the
+// text just copied (its button shows a check for a moment), `failed` the key of a copy that failed.
+export global HistoryList {
+    in property <[HistoryItem]> items;
+    in property <string> copied;
+    in property <string> failed;
+    in property <string> copy-error;
+    callback copy(key: string, text: string);
+    callback delete(id: int);
+    callback clear();
 }
 
 // The Backup and Restore page (Android `BackupPage.kt`). The passwords are cleared after a successful operation and

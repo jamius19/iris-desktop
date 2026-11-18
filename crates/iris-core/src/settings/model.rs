@@ -171,6 +171,10 @@ pub struct Settings {
     pub launch_at_startup: bool,
     /// Desktop: a start at login opens hidden in the tray.
     pub start_hidden: bool,
+    /// Desktop: dictations are kept in the History file.
+    pub history_enabled: bool,
+    /// Desktop: how many dictations History keeps; one of [`HISTORY_LIMITS`], any other stored value means the default.
+    pub history_limit: i32,
 }
 
 impl Settings {
@@ -331,6 +335,9 @@ pub const DEFAULT_FEEDBACK_VOLUME_PERCENT: i32 = 100;
 pub const FEEDBACK_VOLUME_PERCENT_RANGE: RangeInclusive<i32> = 0..=100;
 pub const DEFAULT_DUCK_AMOUNT: i32 = 50;
 pub const DUCK_AMOUNT_RANGE: RangeInclusive<i32> = 0..=100;
+pub const DEFAULT_HISTORY_LIMIT: i32 = 20;
+/// The History Limit options in menu order.
+pub const HISTORY_LIMITS: [i32; 6] = [5, 10, 20, 50, 100, 200];
 
 pub const DEFAULT_PROMPT_ID: &str = "default";
 pub const DEFAULT_PROMPT_NAME: &str = "Clean up dictation";
@@ -406,6 +413,8 @@ pub mod keys {
     pub const DUCK_AMOUNT: &str = "duck_amount";
     pub const LAUNCH_AT_STARTUP: &str = "launch_at_startup";
     pub const START_HIDDEN: &str = "start_hidden";
+    pub const HISTORY_ENABLED: &str = "history_enabled";
+    pub const HISTORY_LIMIT: &str = "history_limit";
 }
 
 /// Custom words as providers may receive them: `<`, `>`, CR and LF removed, whitespace collapsed, trimmed; blanks,
@@ -553,6 +562,10 @@ pub fn to_settings(values: &Values, stored_secrets: &HashSet<String>) -> Result<
         duck_amount: int(values, keys::DUCK_AMOUNT)?.unwrap_or(DEFAULT_DUCK_AMOUNT),
         launch_at_startup: boolean(values, keys::LAUNCH_AT_STARTUP)?.unwrap_or(false),
         start_hidden: boolean(values, keys::START_HIDDEN)?.unwrap_or(true),
+        history_enabled: boolean(values, keys::HISTORY_ENABLED)?.unwrap_or(true),
+        history_limit: int(values, keys::HISTORY_LIMIT)?
+            .filter(|limit| HISTORY_LIMITS.contains(limit))
+            .unwrap_or(DEFAULT_HISTORY_LIMIT),
     })
 }
 
@@ -798,6 +811,8 @@ mod tests {
         assert_eq!(50, settings.duck_amount);
         assert!(!settings.launch_at_startup);
         assert!(settings.start_hidden);
+        assert!(settings.history_enabled);
+        assert_eq!(20, settings.history_limit);
     }
 
     #[test]
@@ -893,6 +908,13 @@ mod tests {
         let settings = settings(&prefs([(keys::ON_DEVICE_UNLOAD_MINUTES, Value::Int(7))]));
 
         assert_eq!(DEFAULT_ON_DEVICE_UNLOAD_MINUTES, settings.on_device_unload_minutes);
+    }
+
+    #[test]
+    fn history_limit_outside_the_options_means_the_default() {
+        let settings = settings(&prefs([(keys::HISTORY_LIMIT, Value::Int(7))]));
+
+        assert_eq!(DEFAULT_HISTORY_LIMIT, settings.history_limit);
     }
 
     #[test]

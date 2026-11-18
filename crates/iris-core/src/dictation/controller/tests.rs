@@ -337,7 +337,7 @@ impl SpeechToTextProvider for FakeStt {
     }
 }
 
-type Hook = Box<dyn Fn(String) -> BoxFuture<'static, DictationState> + Send + Sync>;
+type Hook = Box<dyn Fn(String, String) -> BoxFuture<'static, DictationState> + Send + Sync>;
 type Detector = Box<dyn Fn(String) -> BoxFuture<'static, Option<String>> + Send + Sync>;
 
 /// A controller's dependencies (Kotlin's `controller(...)` arguments); `..Setup::new(stt)` for the defaults.
@@ -371,6 +371,7 @@ impl Setup {
 
     fn build(self) -> Harness {
         let finals = Shared::<Vec<String>>::default();
+        let raws = Shared::<Vec<String>>::default();
         let warm_ups = Shared::<Vec<Settings>>::default();
         let warmed = warm_ups.clone();
         let released = Arc::new(AtomicBool::new(false));
@@ -378,7 +379,7 @@ impl Setup {
         let settings = Settings { vad_enabled: self.vad_model.is_some(), ..self.settings };
         let (audio, level, stt) = (self.audio, self.level, self.stt);
         let (audio_released, rate) = (released.clone(), recorded_rate.clone());
-        let collected = finals.clone();
+        let (collected, collected_raws) = (finals.clone(), raws.clone());
         let records = Shared::<Vec<(Settings, DictationRecord)>>::default();
         let (recorded, events) = (records.clone(), self.events);
         let deps = Deps {
@@ -390,7 +391,8 @@ impl Setup {
             settings: Box::new(move || settings.clone()),
             warm_up_cleanup: Box::new(move |s| warmed.lock().unwrap().push(s.clone())),
             on_final_transcript: self.on_final_transcript.unwrap_or_else(|| {
-                Box::new(move |text| {
+                Box::new(move |raw, text| {
+                    collected_raws.lock().unwrap().push(raw);
                     collected.lock().unwrap().push(text.clone());
                     Box::pin(async move { done(&text) })
                 })
@@ -406,13 +408,14 @@ impl Setup {
             }),
         };
         let controller = DictationController::new(Handle::current(), deps);
-        Harness { controller, finals, released, recorded_rate, warm_ups, records }
+        Harness { controller, finals, raws, released, recorded_rate, warm_ups, records }
     }
 }
 
 struct Harness {
     controller: DictationController,
     finals: Shared<Vec<String>>,
+    raws: Shared<Vec<String>>,
     released: Arc<AtomicBool>,
     recorded_rate: Arc<AtomicU32>,
     /// The settings of every cleanup warm-up.
@@ -431,6 +434,10 @@ impl Harness {
 
     fn finals(&self) -> Vec<String> {
         self.finals.lock().unwrap().clone()
+    }
+
+    fn raws(&self) -> Vec<String> {
+        self.raws.lock().unwrap().clone()
     }
 
     fn released(&self) -> bool {
@@ -824,7 +831,7 @@ async fn cancel_while_listening_discards_session() {
 /// Desktop: the hook can't throw; a panic in it is the equivalent.
 #[tokio::test(start_paused = true)]
 async fn final_transcript_hook_exception_shows_generic_error() {
-    let hook: Hook = Box::new(|_| Box::pin(async { panic!("boom") }));
+    let hook: Hook = Box::new(|_, _| Box::pin(async { panic!("boom") }));
     let h = Setup { on_final_transcript: Some(hook), ..Setup::new(stt(FakeStt::replying("Hi"))) }.build();
 
     h.dictate().await;
@@ -835,7 +842,7 @@ async fn final_transcript_hook_exception_shows_generic_error() {
 async fn done_with_notice_shows_it_for_longer() {
     let notice = DictationState::Done { text: "Hi".into(), notice: Some("Copied to clipboard".into()) };
     let shown = notice.clone();
-    let hook: Hook = Box::new(move |_| {
+    let hook: Hook = Box::new(move |_, _| {
         let shown = shown.clone();
         Box::pin(async move { shown })
     });
@@ -1197,7 +1204,7 @@ fn frames_setup(fake: FakeStt) -> Setup {
 async fn session_is_recorded_after_the_hook_with_its_text_and_times() {
     let events = Shared::<Vec<&'static str>>::default();
     let hook_events = events.clone();
-    let hook: Hook = Box::new(move |_| {
+    let hook: Hook = Box::new(move |_, _| {
         let events = hook_events.clone();
         Box::pin(async move {
             events.lock().unwrap().push("hook");
@@ -1248,7 +1255,7 @@ impl SpeechToTextProvider for EarlyFinish {
 
 #[tokio::test(start_paused = true)]
 async fn transcript_before_the_stop_is_not_recorded_even_if_stop_is_tapped_during_the_hook() {
-    let hook: Hook = Box::new(|text| {
+    let hook: Hook = Box::new(|_, text| {
         Box::pin(async move {
             sleep(Duration::from_millis(500)).await;
             done(&text)
@@ -1325,7 +1332,7 @@ async fn on_device_session_is_recorded_too() {
 
 #[tokio::test(start_paused = true)]
 async fn sessions_without_inserted_text_are_not_recorded() {
-    let panicking: Hook = Box::new(|_| Box::pin(async { panic!("Hook failed") }));
+    let panicking: Hook = Box::new(|_, _| Box::pin(async { panic!("Hook failed") }));
     let harnesses = [
         frames_setup(FakeStt::replying("  ")).build(),
         frames_setup(FakeStt::failing("OpenAI error: Boom")).build(),
@@ -1469,6 +1476,16 @@ async fn custom_words_are_corrected_after_filler_removal() {
 
     assert_eq!(vec!["Deepgram works"], h.finals());
     assert_eq!(Some(vec!["Deepgram".to_string()]), stt.seen().custom_words);
+}
+
+/// Desktop (History): the hook also gets the provider's transcript as it came.
+#[tokio::test(start_paused = true)]
+async fn hook_gets_the_raw_transcript_with_the_final_text() {
+    let h = Setup { settings: with_words(), ..Setup::new(stt(FakeStt::replying("deep um gram works"))) }.build();
+    h.dictate().await;
+
+    assert_eq!(vec!["deep um gram works"], h.raws());
+    assert_eq!(vec!["Deepgram works"], h.finals());
 }
 
 #[tokio::test(start_paused = true)]
